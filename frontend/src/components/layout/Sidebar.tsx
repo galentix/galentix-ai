@@ -6,7 +6,6 @@ import {
   Settings, 
   Plus, 
   Trash2,
-  Archive,
   ChevronLeft
 } from 'lucide-react';
 import { useChatStore } from '../../stores/chatStore';

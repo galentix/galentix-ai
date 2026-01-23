@@ -104,7 +104,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
   
   sendMessage: async (content) => {
-    const { currentConversation, useRag, useWebSearch, messages } = get();
+    const { currentConversation, useRag, useWebSearch } = get();
     
     // Add user message immediately
     const userMessage: Message = {

@@ -36,8 +36,9 @@ export default function Message({ message, isStreaming }: MessageProps) {
               <ReactMarkdown
                 components={{
                   // Custom code block styling
-                  code({ node, inline, className, children, ...props }) {
-                    return inline ? (
+                  code({ className, children, ...props }) {
+                    const isInline = !className;
+                    return isInline ? (
                       <code className="bg-gray-200 dark:bg-slate-700 px-1.5 py-0.5 rounded text-sm" {...props}>
                         {children}
                       </code>
