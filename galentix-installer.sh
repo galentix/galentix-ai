@@ -358,8 +358,8 @@ LoginGraceTime 30
 AllowUsers support
 EOF
 
-# Restart SSH
-systemctl restart sshd
+# Restart SSH (Ubuntu uses 'ssh' not 'sshd')
+systemctl restart ssh || systemctl restart sshd || log_warning "Could not restart SSH service"
 log_success "SSH hardened - key-only authentication enabled"
 
 ################################################################################
