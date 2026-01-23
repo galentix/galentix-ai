@@ -560,60 +560,66 @@ echo "=============================================="
 echo
 
 log_step "[11/12] Setting up Python environment..."
+log_info "This step takes 5-15 minutes. Installing packages..."
 
 # Create virtual environment
-sudo -u galentix bash << 'VENV_SCRIPT'
-cd /opt/galentix
-python3 -m venv .venv
-source .venv/bin/activate
+log_info "  [1/7] Creating virtual environment..."
+sudo -u galentix python3 -m venv /opt/galentix/.venv
 
-pip install --upgrade pip --quiet
-
-# Core dependencies
-pip install --quiet \
+log_info "  [2/7] Installing core packages (FastAPI, Pydantic)..."
+sudo -u galentix /opt/galentix/.venv/bin/pip install --upgrade pip -q
+sudo -u galentix /opt/galentix/.venv/bin/pip install \
     fastapi==0.109.0 \
     uvicorn[standard]==0.27.0 \
     python-multipart==0.0.6 \
     pydantic==2.5.3 \
-    pydantic-settings==2.1.0
+    pydantic-settings==2.1.0 \
+    2>&1 | tail -1
 
-# Database
-pip install --quiet \
+log_info "  [3/7] Installing database packages (SQLAlchemy)..."
+sudo -u galentix /opt/galentix/.venv/bin/pip install \
     sqlalchemy==2.0.25 \
-    aiosqlite==0.19.0
+    aiosqlite==0.19.0 \
+    2>&1 | tail -1
 
-# RAG & Embeddings
-pip install --quiet \
+log_info "  [4/7] Installing RAG packages (ChromaDB, LangChain)..."
+log_info "        This is the largest download, please wait..."
+sudo -u galentix /opt/galentix/.venv/bin/pip install \
     chromadb==0.4.22 \
     langchain==0.1.4 \
     langchain-community==0.0.16 \
-    sentence-transformers==2.3.1
+    sentence-transformers==2.3.1 \
+    2>&1 | tail -1
 
-# Document processing
-pip install --quiet \
+log_info "  [5/7] Installing document processing packages..."
+sudo -u galentix /opt/galentix/.venv/bin/pip install \
     pypdf==3.17.4 \
     python-docx==1.1.0 \
     openpyxl==3.1.2 \
     beautifulsoup4==4.12.3 \
-    trafilatura==1.6.3
+    trafilatura==1.6.3 \
+    2>&1 | tail -1
 
-# HTTP client
-pip install --quiet \
+log_info "  [6/7] Installing HTTP clients..."
+sudo -u galentix /opt/galentix/.venv/bin/pip install \
     httpx==0.26.0 \
-    aiohttp==3.9.3
+    aiohttp==3.9.3 \
+    2>&1 | tail -1
 
-# Utilities
-pip install --quiet \
+log_info "  [7/7] Installing utilities..."
+sudo -u galentix /opt/galentix/.venv/bin/pip install \
     python-jose[cryptography]==3.3.0 \
     passlib[bcrypt]==1.7.4 \
-    tiktoken==0.5.2
+    tiktoken==0.5.2 \
+    psutil==5.9.7 \
+    aiofiles==23.2.1 \
+    2>&1 | tail -1
 
-VENV_SCRIPT
-
-if [[ $? -eq 0 ]]; then
-    log_success "Python environment configured"
+# Verify installation
+if sudo -u galentix /opt/galentix/.venv/bin/python -c "import fastapi, chromadb, langchain" 2>/dev/null; then
+    log_success "Python environment configured successfully"
 else
-    log_error "Python environment setup failed"
+    log_error "Python environment setup failed - some packages missing"
     exit 1
 fi
 
