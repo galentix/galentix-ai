@@ -336,12 +336,11 @@ log_step "[7/12] Configuring SSH security..."
 # Backup original sshd_config
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
 
-# Configure SSH for key-only auth
-cat > /etc/ssh/sshd_config.d/galentix-hardening.conf << 'EOF'
-# Galentix AI SSH Hardening Configuration
-# Only allow key-based authentication
+# Configure SSH with password authentication for development
+cat > /etc/ssh/sshd_config.d/galentix-config.conf << 'EOF'
+# Galentix AI SSH Configuration
 
-PasswordAuthentication no
+PasswordAuthentication yes
 ChallengeResponseAuthentication no
 UsePAM yes
 PermitRootLogin no
@@ -351,16 +350,13 @@ AuthorizedKeysFile .ssh/authorized_keys
 # Security settings
 X11Forwarding no
 AllowTcpForwarding no
-MaxAuthTries 3
-LoginGraceTime 30
-
-# Only allow support user via SSH
-AllowUsers support
+MaxAuthTries 5
+LoginGraceTime 60
 EOF
 
 # Restart SSH (Ubuntu uses 'ssh' not 'sshd')
 systemctl restart ssh || systemctl restart sshd || log_warning "Could not restart SSH service"
-log_success "SSH hardened - key-only authentication enabled"
+log_success "SSH configured - password authentication enabled for development"
 
 ################################################################################
 # PHASE 6: FIREWALL CONFIGURATION
