@@ -18,7 +18,7 @@ import { useTranslation } from 'react-i18next';
 import Card from '../components/ui/Card';
 import { useAuthStore } from '../stores/authStore';
 import * as api from '../services/api';
-import type { SystemStats, Settings } from '../types';
+import type { SystemStats } from '../types';
 
 export default function CompliancePage() {
   const { t } = useTranslation();
@@ -26,7 +26,7 @@ export default function CompliancePage() {
   const isAdmin = authUser?.role === 'admin';
 
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [settings, setSettings] = useState<Settings | null>(null);
+  const [, setSettings] = useState<Settings | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [retentionDays, setRetentionDays] = useState<number>(0);
