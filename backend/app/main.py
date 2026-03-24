@@ -117,8 +117,10 @@ app.include_router(auth_router.router)
 
 
 # Serve static files (frontend)
-# Check production path first, then dev path
-frontend_path = settings.base_dir / "frontend"
+# Check production build (dist/) first, then dev fallbacks
+frontend_path = settings.base_dir / "frontend" / "dist"
+if not (frontend_path / "index.html").exists():
+    frontend_path = settings.base_dir / "frontend"
 if not (frontend_path / "index.html").exists():
     frontend_path = Path(__file__).parent.parent.parent / "frontend" / "dist"
 if frontend_path.exists() and (frontend_path / "assets").exists():
