@@ -3,6 +3,7 @@ Galentix AI - Documents Router
 Handles document upload and management for RAG.
 """
 import os
+import re
 import uuid
 import aiofiles
 from typing import List
@@ -73,7 +74,47 @@ async def extract_text_from_file(filepath: Path, file_type: str) -> str:
     except Exception as e:
         raise Exception(f"Text extraction failed: {e}")
     
+    # Clean up spaced-out text from PDFs (e.g., "I n v o i c e" -> "Invoice")
+    if text and file_type == ".pdf":
+        text = fix_spaced_text(text)
+
     return text
+
+
+def fix_spaced_text(text: str) -> str:
+    """Fix text where characters are separated by spaces (common in some PDFs).
+    Detects patterns like 'I n v o i c e' and joins them into 'Invoice'."""
+    lines = text.split("\n")
+    fixed_lines = []
+
+    for line in lines:
+        # Check if the line looks spaced out: most single chars separated by spaces
+        # Pattern: at least 3 single characters separated by single spaces
+        stripped = line.strip()
+        if not stripped:
+            fixed_lines.append(line)
+            continue
+
+        # Count single-char tokens vs multi-char tokens
+        tokens = stripped.split(" ")
+        if len(tokens) > 3:
+            single_char_count = sum(1 for t in tokens if len(t) <= 1)
+            ratio = single_char_count / len(tokens)
+
+            if ratio > 0.6:
+                # This line is spaced out — join characters
+                # Remove single spaces between single characters but keep multi-spaces as word breaks
+                fixed = re.sub(r'(?<=\S) (?=\S)', '', stripped)
+                # Re-add spaces at likely word boundaries (transitions from lowercase to uppercase, etc.)
+                # Also split on double+ spaces that were in the original
+                parts = re.split(r'  +', stripped)
+                fixed = " ".join(re.sub(r'(?<=\S) (?=\S)', '', p) for p in parts)
+                fixed_lines.append(fixed)
+                continue
+
+        fixed_lines.append(line)
+
+    return "\n".join(fixed_lines)
 
 
 async def process_document(document_id: str, filepath: Path, file_type: str):
