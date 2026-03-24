@@ -26,7 +26,7 @@ export default function CompliancePage() {
   const isAdmin = authUser?.role === 'admin';
 
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [, setSettings] = useState<Settings | null>(null);
+  const [, setSettings] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [retentionDays, setRetentionDays] = useState<number>(0);
