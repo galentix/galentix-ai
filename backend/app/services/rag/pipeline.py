@@ -244,26 +244,29 @@ class RAGPipeline:
         self,
         query: str,
         top_k: int = 5
-    ) -> str:
+    ) -> tuple[str, List[Dict[str, Any]]]:
         """
         Build context string from relevant documents for LLM.
+
+        Returns a tuple of (context_string, raw_results) so callers
+        can access both without performing a duplicate search.
         """
         results = await self.search(query, top_k=top_k)
-        
+
         if not results:
-            return ""
-        
+            return "", []
+
         context_parts = []
         for i, result in enumerate(results, 1):
             source_info = ""
             if "filename" in result["metadata"]:
                 source_info = f" (Source: {result['metadata']['filename']})"
-            
+
             context_parts.append(
                 f"[Document {i}{source_info}]\n{result['content']}"
             )
-        
-        return "\n\n---\n\n".join(context_parts)
+
+        return "\n\n---\n\n".join(context_parts), results
     
     async def get_stats(self) -> Dict[str, Any]:
         """Get statistics about the vector store."""

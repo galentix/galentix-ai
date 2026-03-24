@@ -18,7 +18,7 @@ class Document(Base):
     file_size = Column(Integer, default=0)  # in bytes
     
     # Processing status
-    status = Column(String(20), default="pending")  # pending, processing, ready, error
+    status = Column(String(20), default="pending", index=True)  # pending, processing, ready, error
     error_message = Column(Text, nullable=True)
     
     # RAG metadata

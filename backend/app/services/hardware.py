@@ -31,9 +31,45 @@ class HardwareInfo:
             self.gpu = GPUInfo()
 
 
+# Models with strong Arabic language support (Ollama names)
+ARABIC_CAPABLE_MODELS = {
+    "jais-13b-chat": {
+        "description": "G42/Inception Arabic-English bilingual model",
+        "languages": ["ar", "en"],
+        "min_ram_gb": 16,
+    },
+    "aya-23": {
+        "description": "Cohere multilingual model with strong Arabic",
+        "languages": ["ar", "en", "fr", "de", "es", "ja", "zh"],
+        "min_ram_gb": 16,
+    },
+    "qwen2.5": {
+        "description": "Alibaba multilingual model with Arabic support",
+        "languages": ["ar", "en", "zh", "fr", "de", "es", "ja", "ko"],
+        "min_ram_gb": 8,
+    },
+    "command-r": {
+        "description": "Cohere multilingual with Arabic support",
+        "languages": ["ar", "en", "fr", "de", "es", "ja", "zh"],
+        "min_ram_gb": 24,
+    },
+}
+
+
+def is_arabic_capable(model_name: str) -> bool:
+    """Check if a model is known to have Arabic language support."""
+    base_name = model_name.split(":")[0] if ":" in model_name else model_name
+    return base_name in ARABIC_CAPABLE_MODELS
+
+
+def get_arabic_capable_models() -> Dict[str, Any]:
+    """Return the full Arabic-capable models registry."""
+    return ARABIC_CAPABLE_MODELS
+
+
 class HardwareDetector:
     """Detects system hardware and recommends LLM configuration."""
-    
+
     def __init__(self):
         self._hardware_info: Optional[HardwareInfo] = None
     
@@ -167,8 +203,19 @@ class HardwareDetector:
                 config["model"] = "tinyllama"
                 config["reason"] = f"Limited RAM ({hw.ram_gb}GB) - using TinyLlama"
         
+        # Add Arabic-capable model recommendations based on hardware
+        arabic_models = []
+        for model_name, info in ARABIC_CAPABLE_MODELS.items():
+            if hw.ram_gb >= info["min_ram_gb"]:
+                arabic_models.append({
+                    "name": model_name,
+                    "description": info["description"],
+                    "languages": info["languages"],
+                })
+        config["arabic_recommended"] = arabic_models
+
         return config
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert hardware info to dictionary."""
         hw = self.detect()

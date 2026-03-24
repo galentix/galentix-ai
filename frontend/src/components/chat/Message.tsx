@@ -1,3 +1,4 @@
+import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import { User, Bot, FileText, Globe } from 'lucide-react';
 import type { Message as MessageType } from '../../types';
@@ -7,7 +8,7 @@ interface MessageProps {
   isStreaming?: boolean;
 }
 
-export default function Message({ message, isStreaming }: MessageProps) {
+function Message({ message, isStreaming }: MessageProps) {
   const isUser = message.role === 'user';
   const hasSources = message.sources && message.sources.length > 0;
 
@@ -16,18 +17,18 @@ export default function Message({ message, isStreaming }: MessageProps) {
       {/* Avatar */}
       <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
         isUser 
-          ? 'bg-galentix-300 text-white' 
+          ? 'bg-galentix-500 text-white' 
           : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300'
       }`}>
         {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
       </div>
 
       {/* Content */}
-      <div className={`flex-1 max-w-[80%] ${isUser ? 'text-right' : ''}`}>
+      <div className={`flex-1 max-w-[80%] ${isUser ? 'text-end' : ''}`}>
         <div className={`inline-block rounded-2xl px-4 py-3 ${
-          isUser 
-            ? 'bg-galentix-300 text-white rounded-tr-none' 
-            : 'bg-gray-100 dark:bg-slate-800 rounded-tl-none'
+          isUser
+            ? 'bg-galentix-500 text-white rounded-te-none'
+            : 'bg-gray-100 dark:bg-slate-800 rounded-ts-none'
         }`}>
           {isUser ? (
             <p className="whitespace-pre-wrap">{message.content}</p>
@@ -57,7 +58,7 @@ export default function Message({ message, isStreaming }: MessageProps) {
                         href={href} 
                         target="_blank" 
                         rel="noopener noreferrer"
-                        className="text-galentix-400 hover:text-galentix-300 underline"
+                        className="text-galentix-600 hover:text-galentix-500 underline"
                       >
                         {children}
                       </a>
@@ -96,10 +97,12 @@ export default function Message({ message, isStreaming }: MessageProps) {
         )}
 
         {/* Timestamp */}
-        <p className={`text-xs text-gray-400 dark:text-gray-500 mt-1 ${isUser ? 'text-right' : ''}`}>
+        <p className={`text-xs text-gray-400 dark:text-gray-500 mt-1 ${isUser ? 'text-end' : ''}`}>
           {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
         </p>
       </div>
     </div>
   );
 }
+
+export default React.memo(Message);

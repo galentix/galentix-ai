@@ -24,11 +24,18 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     loadDocuments();
-    
-    // Poll for status updates
+  }, []);
+
+  useEffect(() => {
+    // Only poll when documents are being processed
+    const hasProcessing = documents.some(d =>
+      d.status === 'pending' || d.status === 'processing'
+    );
+    if (!hasProcessing) return;
+
     const interval = setInterval(loadDocuments, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [documents]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     setIsUploading(true);
@@ -119,16 +126,16 @@ export default function DocumentsPage() {
           {...getRootProps()}
           className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors mb-6 ${
             isDragActive
-              ? 'border-galentix-300 bg-galentix-50 dark:bg-galentix-900/20'
-              : 'border-gray-300 dark:border-slate-600 hover:border-galentix-300'
+              ? 'border-galentix-500 bg-galentix-50 dark:bg-galentix-900/20'
+              : 'border-gray-300 dark:border-slate-600 hover:border-galentix-500'
           }`}
         >
           <input {...getInputProps()} />
-          <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragActive ? 'text-galentix-300' : 'text-gray-400'}`} />
+          <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragActive ? 'text-galentix-500' : 'text-gray-400'}`} />
           {isUploading ? (
             <p className="text-gray-600 dark:text-gray-300">Uploading...</p>
           ) : isDragActive ? (
-            <p className="text-galentix-600 dark:text-galentix-300">Drop files here...</p>
+            <p className="text-galentix-600 dark:text-galentix-500">Drop files here...</p>
           ) : (
             <>
               <p className="text-gray-600 dark:text-gray-300 mb-2">
@@ -189,6 +196,7 @@ export default function DocumentsPage() {
                   {doc.status === 'error' && (
                     <button
                       onClick={() => handleReprocess(doc.id)}
+                      aria-label="Reprocess document"
                       className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
                       title="Reprocess"
                     >
@@ -197,6 +205,7 @@ export default function DocumentsPage() {
                   )}
                   <button
                     onClick={() => handleDelete(doc.id)}
+                    aria-label="Delete document"
                     className="p-2 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-colors text-red-500"
                     title="Delete"
                   >

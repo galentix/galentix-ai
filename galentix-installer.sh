@@ -452,12 +452,13 @@ if [[ -f /etc/ssh/sshd_config ]]; then
     # Backup original sshd_config
     cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
 
-    # Configure SSH with password authentication for development
+    # Configure SSH with key-only authentication
     mkdir -p /etc/ssh/sshd_config.d
     cat > /etc/ssh/sshd_config.d/galentix-config.conf << 'EOF'
 # Galentix AI SSH Configuration
 
-PasswordAuthentication yes
+# Disabled for security - SSH key auth only
+PasswordAuthentication no
 ChallengeResponseAuthentication no
 UsePAM yes
 PermitRootLogin no
@@ -473,7 +474,7 @@ EOF
 
     # Restart SSH (Ubuntu uses 'ssh' not 'sshd')
     systemctl restart ssh || systemctl restart sshd || log_warning "Could not restart SSH service"
-    log_success "SSH configured - password authentication enabled for development"
+    log_success "SSH configured - key-only authentication enabled"
 else
     log_warning "SSH server not installed - skipping SSH hardening (normal for WSL2)"
 fi
@@ -527,8 +528,11 @@ log_step "[9/12] Setting up SearXNG..."
 # Create SearXNG directory
 mkdir -p "${INSTALL_DIR}/searxng"
 
+# Generate random secret key for SearXNG
+SEARXNG_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
 # Create SearXNG settings
-cat > "${INSTALL_DIR}/searxng/settings.yml" << 'EOF'
+cat > "${INSTALL_DIR}/searxng/settings.yml" << EOF
 use_default_settings: true
 
 general:
@@ -543,7 +547,7 @@ search:
   default_lang: "en"
 
 server:
-  secret_key: "galentix-searxng-secret-key-change-in-production"
+  secret_key: "$SEARXNG_SECRET"
   limiter: false
   image_proxy: true
   http_protocol_version: "1.1"

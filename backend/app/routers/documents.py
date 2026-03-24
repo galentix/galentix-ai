@@ -2,6 +2,7 @@
 Galentix AI - Documents Router
 Handles document upload and management for RAG.
 """
+import asyncio
 import os
 import re
 import uuid
@@ -9,15 +10,19 @@ import aiofiles
 from typing import List
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from ..database import get_db
 from ..models.document import Document
+from ..models.user import User
 from ..models.schemas import DocumentResponse, DocumentListResponse, DocumentUploadResponse
 from ..services.rag import get_rag_pipeline
+from ..services.auth import get_current_user
+from ..services.audit import log_action
 from ..config import settings
+from ..rate_limit import limiter
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -101,44 +106,48 @@ def extract_pdf_text(filepath: Path) -> str:
     return text
 
 
+def extract_docx_text(filepath: Path) -> str:
+    """Extract text from DOCX file (synchronous, CPU-bound)."""
+    from docx import Document as DocxDocument
+    doc = DocxDocument(str(filepath))
+    text_parts = []
+    for para in doc.paragraphs:
+        if para.text.strip():
+            text_parts.append(para.text)
+    return "\n\n".join(text_parts)
+
+
 async def extract_text_from_file(filepath: Path, file_type: str) -> str:
     """Extract text content from various file types."""
     text = ""
-    
+
     try:
         if file_type in [".txt", ".md"]:
             async with aiofiles.open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 text = await f.read()
-        
+
         elif file_type == ".pdf":
-            text = extract_pdf_text(filepath)
-        
+            # Offload CPU-intensive PDF extraction to thread pool
+            text = await asyncio.to_thread(extract_pdf_text, filepath)
+
         elif file_type in [".docx", ".doc"]:
-            try:
-                from docx import Document as DocxDocument
-                doc = DocxDocument(str(filepath))
-                text_parts = []
-                for para in doc.paragraphs:
-                    if para.text.strip():
-                        text_parts.append(para.text)
-                text = "\n\n".join(text_parts)
-            except Exception as e:
-                raise Exception(f"DOCX extraction failed: {e}")
-        
+            # Offload CPU-intensive DOCX extraction to thread pool
+            text = await asyncio.to_thread(extract_docx_text, filepath)
+
         elif file_type == ".csv":
             async with aiofiles.open(filepath, "r", encoding="utf-8", errors="ignore") as f:
                 text = await f.read()
-        
+
         elif file_type == ".json":
             import json
             async with aiofiles.open(filepath, "r", encoding="utf-8") as f:
                 content = await f.read()
                 data = json.loads(content)
                 text = json.dumps(data, indent=2)
-        
+
     except Exception as e:
         raise Exception(f"Text extraction failed: {e}")
-    
+
     # Clean up spaced-out text from PDFs (e.g., "I n v o i c e" -> "Invoice")
     if text and file_type == ".pdf":
         text = fix_spaced_text(text)
@@ -244,10 +253,13 @@ async def process_document(document_id: str, filepath: Path, file_type: str):
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
+@limiter.limit("5/minute")
 async def upload_document(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Upload a document for RAG indexing."""
     
@@ -296,9 +308,16 @@ async def upload_document(
     db.add(doc)
     await db.commit()
     
+    await log_action(
+        db, "document.uploaded", user=current_user,
+        resource_type="document", resource_id=document_id,
+        details={"filename": file.filename, "file_type": file_ext, "file_size": len(content)},
+        request=request,
+    )
+
     # Process in background
     background_tasks.add_task(process_document, document_id, filepath, file_ext)
-    
+
     return DocumentUploadResponse(
         id=document_id,
         filename=file.filename,
@@ -308,11 +327,14 @@ async def upload_document(
 
 
 @router.get("/", response_model=DocumentListResponse)
+@limiter.limit("60/minute")
 async def list_documents(
+    request: Request,
     skip: int = 0,
     limit: int = 50,
     status: str = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """List all uploaded documents."""
     query = select(Document).order_by(Document.created_at.desc())
@@ -325,9 +347,12 @@ async def list_documents(
     result = await db.execute(query)
     documents = result.scalars().all()
     
-    # Get total count
-    count_result = await db.execute(select(Document))
-    total = len(count_result.scalars().all())
+    # Get total count efficiently
+    count_query = select(func.count(Document.id))
+    if status:
+        count_query = count_query.where(Document.status == status)
+    count_result = await db.execute(count_query)
+    total = count_result.scalar()
     
     return DocumentListResponse(
         documents=[
@@ -350,9 +375,12 @@ async def list_documents(
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
+@limiter.limit("60/minute")
 async def get_document(
+    request: Request,
     document_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Get a specific document."""
     result = await db.execute(
@@ -378,9 +406,12 @@ async def get_document(
 
 
 @router.delete("/{document_id}")
+@limiter.limit("60/minute")
 async def delete_document(
+    request: Request,
     document_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Delete a document and its index."""
     result = await db.execute(
@@ -401,17 +432,29 @@ async def delete_document(
         os.remove(filepath)
     
     # Delete from database
+    deleted_name = doc.original_name
     await db.delete(doc)
+
+    await log_action(
+        db, "document.deleted", user=current_user,
+        resource_type="document", resource_id=document_id,
+        details={"filename": deleted_name},
+        request=request,
+    )
+
     await db.commit()
-    
+
     return {"message": "Document deleted"}
 
 
 @router.post("/{document_id}/reprocess")
+@limiter.limit("60/minute")
 async def reprocess_document(
+    request: Request,
     document_id: str,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Reprocess a document."""
     result = await db.execute(

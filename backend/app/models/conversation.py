@@ -3,7 +3,7 @@ Galentix AI - Conversation & Message Models
 """
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer, Boolean, JSON
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer, Boolean, JSON, Index
 from sqlalchemy.orm import relationship
 from ..database import Base
 import uuid
@@ -15,9 +15,10 @@ class Conversation(Base):
     
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     title = Column(String(255), default="New Conversation")
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    is_archived = Column(Boolean, default=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
+    is_archived = Column(Boolean, default=False, index=True)
     
     # Metadata
     metadata_ = Column("metadata", JSON, default=dict)
@@ -40,6 +41,10 @@ class Message(Base):
     """Message model - represents a single message in a conversation."""
     __tablename__ = "messages"
     
+    __table_args__ = (
+        Index("ix_messages_conversation_created", "conversation_id", "created_at"),
+    )
+
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     conversation_id = Column(String(36), ForeignKey("conversations.id"), nullable=False)
     role = Column(String(20), nullable=False)  # "user", "assistant", "system"
