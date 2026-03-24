@@ -649,25 +649,23 @@ else
     log_warning "Ollama service status unknown - continuing"
 fi
 
-# Download all selected models
-log_info "Downloading ${#SELECTED_MODELS[@]} model(s)..."
-if [[ "${LLM_ENGINE}" == "ollama" ]]; then
-    for i in "${!SELECTED_MODELS[@]}"; do
-        model="${SELECTED_MODELS[$i]}"
-        log_info "Downloading model $((i+1))/${#SELECTED_MODELS[@]}: ${model} (this may take several minutes)..."
-        if ollama pull "${model}" 2>&1; then
-            log_success "Model ${model} downloaded"
-        else
-            log_warning "Download of ${model} had issues"
-        fi
-    done
+# Download all selected models via Ollama (always needed, even with vLLM as primary engine)
+log_info "Downloading ${#SELECTED_MODELS[@]} model(s) via Ollama..."
+for i in "${!SELECTED_MODELS[@]}"; do
+    model="${SELECTED_MODELS[$i]}"
+    log_info "Downloading model $((i+1))/${#SELECTED_MODELS[@]}: ${model} (this may take several minutes)..."
+    if ollama pull "${model}" 2>&1; then
+        log_success "Model ${model} downloaded"
+    else
+        log_warning "Download of ${model} had issues"
+    fi
+done
 
-    # Also download embedding model for RAG
-    log_info "Downloading embedding model for RAG..."
-    ollama pull nomic-embed-text 2>&1 || log_warning "Embedding model download had issues"
+# Also download embedding model for RAG
+log_info "Downloading embedding model for RAG..."
+ollama pull nomic-embed-text 2>&1 || log_warning "Embedding model download had issues"
 
-    log_success "All models downloaded"
-fi
+log_success "All models downloaded"
 
 # Install vLLM if GPU detected
 if [[ $GPU_DETECTED -eq 1 ]]; then
