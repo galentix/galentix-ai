@@ -10,7 +10,7 @@ from typing import Optional
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from passlib.context import CryptContext
+import bcrypt
 from jose import JWTError, jwt
 
 from ..config import settings
@@ -19,22 +19,22 @@ from ..models.user import User
 
 logger = logging.getLogger(__name__)
 
-# Password hashing context
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
 # ---------------------------------------------------------------------------
 # Password utilities
 # ---------------------------------------------------------------------------
 
 def hash_password(password: str) -> str:
-    """Hash a plaintext password."""
-    return pwd_context.hash(password)
+    """Hash a plaintext password using bcrypt directly."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against its hash."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"),
+        hashed_password.encode("utf-8"),
+    )
 
 
 def validate_password_policy(password: str) -> Optional[str]:
