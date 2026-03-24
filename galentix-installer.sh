@@ -297,7 +297,9 @@ PACKAGES=(
     python3 python3-venv python3-pip python3-dev
     build-essential
     sqlite3 libsqlite3-dev
-    poppler-utils  # For PDF processing
+    poppler-utils  # For PDF processing / pdf2image
+    tesseract-ocr  # OCR for scanned PDFs
+    tesseract-ocr-eng  # English OCR data
 )
 
 for pkg in "${PACKAGES[@]}"; do

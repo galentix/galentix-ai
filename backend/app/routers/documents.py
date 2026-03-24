@@ -26,6 +26,81 @@ SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx", ".doc", ".csv", ".json"}
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
 
 
+def is_garbled_text(text: str) -> bool:
+    """Detect if extracted text is garbled (spaced-out characters, etc.)."""
+    if not text or len(text.strip()) < 20:
+        return True
+    # Check ratio of single-char words — garbled PDFs have mostly single chars
+    words = text.split()
+    if len(words) < 5:
+        return False
+    single_char_ratio = sum(1 for w in words if len(w) == 1) / len(words)
+    return single_char_ratio > 0.5
+
+
+def extract_pdf_text(filepath: Path) -> str:
+    """Extract text from PDF using best available method.
+    Fallback chain: PyMuPDF → OCR (tesseract) → pypdf."""
+
+    text = ""
+
+    # 1. Try PyMuPDF (best general-purpose extraction)
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(str(filepath))
+        text_parts = []
+        for page in doc:
+            page_text = page.get_text()
+            if page_text:
+                text_parts.append(page_text)
+        doc.close()
+        text = "\n\n".join(text_parts)
+
+        if text.strip() and not is_garbled_text(text):
+            return text
+        print("PyMuPDF text looks garbled, trying OCR...")
+    except ImportError:
+        print("PyMuPDF not available, trying OCR...")
+    except Exception as e:
+        print(f"PyMuPDF failed: {e}, trying OCR...")
+
+    # 2. Try OCR via tesseract + pdf2image
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+
+        images = convert_from_path(str(filepath), dpi=300)
+        text_parts = []
+        for img in images:
+            page_text = pytesseract.image_to_string(img)
+            if page_text:
+                text_parts.append(page_text)
+        text = "\n\n".join(text_parts)
+
+        if text.strip():
+            return text
+        print("OCR produced no text, falling back to pypdf...")
+    except ImportError:
+        print("pytesseract/pdf2image not available, falling back to pypdf...")
+    except Exception as e:
+        print(f"OCR failed: {e}, falling back to pypdf...")
+
+    # 3. Fallback to pypdf
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(filepath))
+        text_parts = []
+        for page in reader.pages:
+            page_text = page.extract_text()
+            if page_text:
+                text_parts.append(page_text)
+        text = "\n\n".join(text_parts)
+    except Exception as e:
+        raise Exception(f"All PDF extraction methods failed: {e}")
+
+    return text
+
+
 async def extract_text_from_file(filepath: Path, file_type: str) -> str:
     """Extract text content from various file types."""
     text = ""
@@ -36,17 +111,7 @@ async def extract_text_from_file(filepath: Path, file_type: str) -> str:
                 text = await f.read()
         
         elif file_type == ".pdf":
-            try:
-                from pypdf import PdfReader
-                reader = PdfReader(str(filepath))
-                text_parts = []
-                for page in reader.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        text_parts.append(page_text)
-                text = "\n\n".join(text_parts)
-            except Exception as e:
-                raise Exception(f"PDF extraction failed: {e}")
+            text = extract_pdf_text(filepath)
         
         elif file_type in [".docx", ".doc"]:
             try:
