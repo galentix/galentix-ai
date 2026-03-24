@@ -92,17 +92,25 @@ GPU_DETECTED=0
 GPU_VRAM_GB=0
 GPU_NAME="None"
 
+# Find nvidia-smi (standard path or WSL path)
+NVIDIA_SMI=""
 if command -v nvidia-smi &> /dev/null; then
-    if nvidia-smi &> /dev/null; then
+    NVIDIA_SMI="nvidia-smi"
+elif [[ -f /usr/lib/wsl/lib/nvidia-smi ]]; then
+    NVIDIA_SMI="/usr/lib/wsl/lib/nvidia-smi"
+fi
+
+if [[ -n "$NVIDIA_SMI" ]]; then
+    if $NVIDIA_SMI &> /dev/null; then
         GPU_DETECTED=1
-        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -n1)
-        GPU_VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
+        GPU_NAME=$($NVIDIA_SMI --query-gpu=name --format=csv,noheader,nounits | head -n1)
+        GPU_VRAM_MB=$($NVIDIA_SMI --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
         GPU_VRAM_GB=$((GPU_VRAM_MB / 1024))
         log_success "NVIDIA GPU detected: ${GPU_NAME} (${GPU_VRAM_GB}GB VRAM)"
     fi
 else
     # Check for NVIDIA hardware without drivers
-    if lspci | grep -i nvidia &> /dev/null; then
+    if command -v lspci &> /dev/null && lspci | grep -i nvidia &> /dev/null; then
         log_warning "NVIDIA GPU found but drivers not installed"
         log_info "Consider installing NVIDIA drivers for better performance"
     else
