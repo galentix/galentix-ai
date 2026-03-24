@@ -198,6 +198,37 @@ class OllamaService(BaseLLMService):
         except Exception:
             return False
 
+    async def pull_model_stream(self, model_name: str):
+        """Pull a model and yield progress updates."""
+        try:
+            async with httpx.AsyncClient(timeout=3600.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{self.base_url}/api/pull",
+                    json={"name": model_name, "stream": True}
+                ) as response:
+                    if response.status_code != 200:
+                        yield {"status": "error", "message": "Failed to start download"}
+                        return
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                progress = {}
+                                progress["status"] = data.get("status", "")
+                                if "total" in data and "completed" in data:
+                                    progress["total"] = data["total"]
+                                    progress["completed"] = data["completed"]
+                                    if data["total"] > 0:
+                                        progress["percent"] = round(data["completed"] / data["total"] * 100, 1)
+                                yield progress
+                                if data.get("status") == "success":
+                                    return
+                            except json.JSONDecodeError:
+                                continue
+        except Exception as e:
+            yield {"status": "error", "message": str(e)}
+
     async def delete_model(self, model_name: str) -> bool:
         """Delete a model from Ollama."""
         try:

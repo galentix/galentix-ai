@@ -3,9 +3,11 @@ Galentix AI - System Router
 System information, health checks, and settings.
 """
 import os
+import json
 import psutil
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 
@@ -275,6 +277,30 @@ async def pull_model(request: ModelPullRequest):
             message=f"Error downloading model: {str(e)}",
             model_name=request.model_name
         )
+
+
+@router.post("/models/pull/stream")
+async def pull_model_stream(request: ModelPullRequest):
+    """Download a model with streaming progress via SSE."""
+    from ..services.llm.ollama import OllamaService
+
+    ollama = OllamaService(base_url=settings.ollama_url)
+
+    async def event_stream():
+        try:
+            async for progress in ollama.pull_model_stream(request.model_name):
+                yield f"data: {json.dumps(progress)}\n\n"
+
+            # Add to tracked models list on success
+            if request.model_name not in settings.llm_models:
+                settings.llm_models.append(request.model_name)
+                save_settings(settings)
+
+            yield f"data: {json.dumps({'status': 'success', 'percent': 100})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 @router.post("/models/switch")

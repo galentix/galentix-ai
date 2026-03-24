@@ -11,6 +11,7 @@ export default function SettingsPage() {
   const [activeModel, setActiveModel] = useState('');
   const [newModelName, setNewModelName] = useState('');
   const [isPulling, setIsPulling] = useState(false);
+  const [pullProgress, setPullProgress] = useState<{ status: string; percent?: number } | null>(null);
   const [switchingModel, setSwitchingModel] = useState<string | null>(null);
   const [deletingModel, setDeletingModel] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -53,14 +54,17 @@ export default function SettingsPage() {
   const handlePullModel = async () => {
     if (!newModelName.trim()) return;
     setIsPulling(true);
+    setPullProgress(null);
     setStatusMessage(null);
     try {
-      const result = await api.pullModel(newModelName.trim());
-      setStatusMessage({
-        text: result.message,
-        type: result.success ? 'success' : 'error'
+      const success = await api.pullModelStream(newModelName.trim(), (data) => {
+        setPullProgress(data);
       });
-      if (result.success) {
+      setStatusMessage({
+        text: success ? `Model ${newModelName.trim()} downloaded successfully` : `Failed to download model`,
+        type: success ? 'success' : 'error'
+      });
+      if (success) {
         setNewModelName('');
         await loadModels();
       }
@@ -68,6 +72,7 @@ export default function SettingsPage() {
       setStatusMessage({ text: `Failed to download model: ${err}`, type: 'error' });
     } finally {
       setIsPulling(false);
+      setPullProgress(null);
     }
   };
 
@@ -169,6 +174,27 @@ export default function SettingsPage() {
                 {isPulling ? 'Downloading...' : 'Download'}
               </button>
             </div>
+            {/* Download Progress Bar */}
+            {isPulling && pullProgress && (
+              <div className="mt-3">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {pullProgress.status || 'Downloading...'}
+                  </span>
+                  {pullProgress.percent !== undefined && (
+                    <span className="text-xs font-medium text-galentix-300">
+                      {pullProgress.percent.toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+                <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-galentix-300 rounded-full transition-all duration-300"
+                    style={{ width: `${pullProgress.percent ?? 0}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Models List */}

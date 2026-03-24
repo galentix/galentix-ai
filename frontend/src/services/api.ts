@@ -215,6 +215,51 @@ export async function pullModel(modelName: string): Promise<{ success: boolean; 
   });
 }
 
+export async function pullModelStream(
+  modelName: string,
+  onProgress: (data: { status: string; percent?: number; completed?: number; total?: number }) => void
+): Promise<boolean> {
+  const response = await fetch(`${API_BASE}/system/models/pull/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model_name: modelName }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to start model download');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let success = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          onProgress(data);
+          if (data.status === 'success') success = true;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  }
+
+  return success;
+}
+
 export async function switchModel(modelName: string): Promise<{ success: boolean; message: string; active_model: string }> {
   return fetchJson(`${API_BASE}/system/models/switch`, {
     method: 'POST',
