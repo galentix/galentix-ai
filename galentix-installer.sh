@@ -18,6 +18,7 @@ set -euo pipefail
 ################################################################################
 
 VERSION="2.0.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/galentix"
 DATA_DIR="${INSTALL_DIR}/data"
 CONFIG_DIR="${INSTALL_DIR}/config"
@@ -876,7 +877,55 @@ else
 fi
 
 ################################################################################
-# PHASE 12: FINAL VERIFICATION
+# PHASE 12: CODE DEPLOYMENT
+################################################################################
+
+echo
+echo "=============================================="
+echo "  PHASE 12: Code Deployment"
+echo "=============================================="
+echo
+
+log_step "[13/14] Deploying backend..."
+if [[ -d "${SCRIPT_DIR}/backend" ]]; then
+    cp -r "${SCRIPT_DIR}/backend/"* "${INSTALL_DIR}/backend/"
+    log_success "Backend code deployed"
+else
+    log_warning "Backend directory not found in ${SCRIPT_DIR} - skipping"
+fi
+
+log_step "[14/14] Building and deploying frontend..."
+if [[ -d "${SCRIPT_DIR}/frontend" ]]; then
+    cd "${SCRIPT_DIR}/frontend"
+    npm install --silent 2>&1 | tail -1
+    npm run build 2>&1 | tail -1
+    cp -r dist/* "${INSTALL_DIR}/frontend/"
+    log_success "Frontend built and deployed"
+else
+    log_warning "Frontend directory not found in ${SCRIPT_DIR} - skipping"
+fi
+
+# Fix ownership
+chown -R galentix:galentix "${INSTALL_DIR}"
+log_success "Permissions set"
+
+# Start the backend
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
+    systemctl start galentix-backend
+    log_success "Backend service started"
+else
+    log_info "Starting backend manually..."
+    sudo -u galentix bash -c "cd ${INSTALL_DIR}/backend && ${INSTALL_DIR}/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 &" 2>/dev/null
+    sleep 3
+    if curl -s http://localhost:8080/api/system/health > /dev/null 2>&1; then
+        log_success "Backend started successfully"
+    else
+        log_warning "Backend may still be starting up. Check: curl http://localhost:8080/api/system/health"
+    fi
+fi
+
+################################################################################
+# PHASE 13: FINAL VERIFICATION
 ################################################################################
 
 echo
@@ -942,7 +991,7 @@ echo "  All Models: ${SELECTED_MODELS[*]}"
 echo
 echo "  Access Points:"
 echo "  --------------"
-echo "  Web UI: http://${IP_ADDR}:8080 (after backend deployment)"
+echo "  Web UI: http://${IP_ADDR}:8080"
 echo "  SSH:    ssh support@${IP_ADDR}"
 echo
 echo "  Service Management:"
@@ -962,13 +1011,6 @@ echo "  SSH Access:"
 echo "  -----------"
 echo "  Only key-based authentication is allowed."
 echo "  Use the master support key to connect."
-echo
-echo "=============================================="
-echo
-echo "  NEXT STEPS:"
-echo "  1. Deploy backend code to ${INSTALL_DIR}/backend"
-echo "  2. Deploy frontend build to ${INSTALL_DIR}/frontend"
-echo "  3. Start the backend: sudo systemctl start galentix-backend"
 echo
 echo "=============================================="
 echo
