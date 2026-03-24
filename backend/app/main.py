@@ -94,8 +94,11 @@ app.include_router(system_router)
 
 
 # Serve static files (frontend)
-frontend_path = Path(__file__).parent.parent.parent / "frontend" / "dist"
-if frontend_path.exists():
+# Check production path first, then dev path
+frontend_path = settings.base_dir / "frontend"
+if not (frontend_path / "index.html").exists():
+    frontend_path = Path(__file__).parent.parent.parent / "frontend" / "dist"
+if frontend_path.exists() and (frontend_path / "assets").exists():
     app.mount("/assets", StaticFiles(directory=frontend_path / "assets"), name="assets")
 
 
