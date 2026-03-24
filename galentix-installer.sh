@@ -166,28 +166,56 @@ echo
 declare -a MENU_MODELS=()
 declare -a MENU_LABELS=()
 
-if [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 24 ]]; then
+# Use VRAM if GPU detected, otherwise RAM
+if [[ $GPU_DETECTED -eq 1 ]]; then
+    AVAILABLE_MEM=$GPU_VRAM_GB
+    MEM_TYPE="VRAM"
+else
+    AVAILABLE_MEM=$TOTAL_RAM_GB
+    MEM_TYPE="RAM"
+fi
+
+# Large (48GB+)
+if [[ $AVAILABLE_MEM -ge 48 ]]; then
     MENU_MODELS+=("llama3:70b")
-    MENU_LABELS+=("llama3:70b        [~40GB] - Large, highest quality")
+    MENU_LABELS+=("llama3:70b           [~40GB] - Largest, highest quality")
 fi
 
-if [[ $TOTAL_RAM_GB -ge 16 ]] || [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 8 ]]; then
+# Medium-large (24-48GB) - sweet spot for 32GB VRAM GPUs
+if [[ $AVAILABLE_MEM -ge 24 ]]; then
+    MENU_MODELS+=("mixtral:8x7b")
+    MENU_LABELS+=("mixtral:8x7b         [~26GB] - Mixture of experts, excellent quality")
+    MENU_MODELS+=("llama3:70b-q4_0")
+    MENU_LABELS+=("llama3:70b-q4_0      [~24GB] - 70B quantized, fits 32GB VRAM")
+    MENU_MODELS+=("command-r:35b")
+    MENU_LABELS+=("command-r:35b        [~20GB] - Strong reasoning, 35B params")
+fi
+
+# Medium (12-24GB)
+if [[ $AVAILABLE_MEM -ge 12 ]]; then
+    MENU_MODELS+=("llama3:13b")
+    MENU_LABELS+=("llama3:13b           [~13GB] - Great balance of speed and quality")
+    MENU_MODELS+=("codellama:13b")
+    MENU_LABELS+=("codellama:13b        [~13GB] - Optimized for code generation")
+fi
+
+# Standard (8GB+)
+if [[ $AVAILABLE_MEM -ge 8 ]]; then
     MENU_MODELS+=("llama3:8b")
-    MENU_LABELS+=("llama3:8b         [~8GB]  - Best quality for most hardware")
-fi
-
-if [[ $TOTAL_RAM_GB -ge 8 ]] || [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 8 ]]; then
+    MENU_LABELS+=("llama3:8b            [~8GB]  - Popular, fast and capable")
     MENU_MODELS+=("mistral:7b")
-    MENU_LABELS+=("mistral:7b        [~8GB]  - Fast and capable")
+    MENU_LABELS+=("mistral:7b           [~8GB]  - Fast and efficient")
 fi
 
-if [[ $TOTAL_RAM_GB -ge 4 ]]; then
+# Small (4GB+)
+if [[ $AVAILABLE_MEM -ge 4 ]]; then
     MENU_MODELS+=("phi3:mini")
-    MENU_LABELS+=("phi3:mini         [~4GB]  - Lightweight")
+    MENU_LABELS+=("phi3:mini            [~4GB]  - Lightweight")
 fi
 
+# Minimal
 MENU_MODELS+=("tinyllama")
-MENU_LABELS+=("tinyllama         [~2GB]  - Minimal resources")
+MENU_LABELS+=("tinyllama            [~2GB]  - Minimal resources")
 
 log_info "Recommended models for your system (${TOTAL_RAM_GB}GB RAM, GPU: ${GPU_NAME}):"
 echo
