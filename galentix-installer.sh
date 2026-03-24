@@ -445,11 +445,13 @@ echo
 
 log_step "[7/12] Configuring SSH security..."
 
-# Backup original sshd_config
-cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
+if [[ -f /etc/ssh/sshd_config ]]; then
+    # Backup original sshd_config
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
 
-# Configure SSH with password authentication for development
-cat > /etc/ssh/sshd_config.d/galentix-config.conf << 'EOF'
+    # Configure SSH with password authentication for development
+    mkdir -p /etc/ssh/sshd_config.d
+    cat > /etc/ssh/sshd_config.d/galentix-config.conf << 'EOF'
 # Galentix AI SSH Configuration
 
 PasswordAuthentication yes
@@ -466,9 +468,12 @@ MaxAuthTries 5
 LoginGraceTime 60
 EOF
 
-# Restart SSH (Ubuntu uses 'ssh' not 'sshd')
-systemctl restart ssh || systemctl restart sshd || log_warning "Could not restart SSH service"
-log_success "SSH configured - password authentication enabled for development"
+    # Restart SSH (Ubuntu uses 'ssh' not 'sshd')
+    systemctl restart ssh || systemctl restart sshd || log_warning "Could not restart SSH service"
+    log_success "SSH configured - password authentication enabled for development"
+else
+    log_warning "SSH server not installed - skipping SSH hardening (normal for WSL2)"
+fi
 
 ################################################################################
 # PHASE 6: FIREWALL CONFIGURATION
@@ -482,23 +487,27 @@ echo
 
 log_step "[8/12] Configuring firewall..."
 
-# Reset UFW to defaults
-ufw --force reset > /dev/null 2>&1
+if command -v ufw &> /dev/null; then
+    # Reset UFW to defaults
+    ufw --force reset > /dev/null 2>&1
 
-# Set default policies
-ufw default deny incoming
-ufw default allow outgoing
+    # Set default policies
+    ufw default deny incoming
+    ufw default allow outgoing
 
-# Allow SSH (for support access)
-ufw allow ssh
+    # Allow SSH (for support access)
+    ufw allow ssh
 
-# Allow web interface
-ufw allow 8080/tcp
+    # Allow web interface
+    ufw allow 8080/tcp
 
-# Enable firewall
-ufw --force enable > /dev/null 2>&1
+    # Enable firewall
+    ufw --force enable > /dev/null 2>&1
 
-log_success "Firewall configured (ports 22, 8080 open)"
+    log_success "Firewall configured (ports 22, 8080 open)"
+else
+    log_warning "UFW not available - skipping firewall configuration (normal for WSL2)"
+fi
 
 ################################################################################
 # PHASE 7: SEARXNG SETUP (DOCKER)
@@ -798,6 +807,12 @@ echo
 
 log_info "Creating systemd service files..."
 
+# Check if systemd is available (not available in some WSL2 setups)
+HAS_SYSTEMD=0
+if command -v systemctl &> /dev/null && systemctl --version &> /dev/null; then
+    HAS_SYSTEMD=1
+fi
+
 # Create backend service
 cat > /etc/systemd/system/galentix-backend.service << 'EOF'
 [Unit]
@@ -848,14 +863,17 @@ ExecStop=/usr/bin/docker compose down
 WantedBy=multi-user.target
 EOF
 
-# Reload systemd
-systemctl daemon-reload
-
-# Enable services (but don't start backend yet - no code)
-systemctl enable galentix-searxng
-systemctl enable galentix-backend 2>/dev/null || true
-
-log_success "Systemd services created"
+# Reload and enable systemd services if available
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
+    systemctl daemon-reload
+    systemctl enable galentix-searxng
+    systemctl enable galentix-backend 2>/dev/null || true
+    log_success "Systemd services created and enabled"
+else
+    log_warning "Systemd not available (WSL2). Service files created but not enabled."
+    log_info "To start manually:"
+    log_info "  /opt/galentix/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080"
+fi
 
 ################################################################################
 # PHASE 12: FINAL VERIFICATION
