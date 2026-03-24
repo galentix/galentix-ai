@@ -176,10 +176,35 @@ class OllamaService(BaseLLMService):
     async def pull_model(self, model_name: str) -> bool:
         """Pull a model from Ollama registry."""
         try:
-            async with httpx.AsyncClient(timeout=600.0) as client:
-                response = await client.post(
+            async with httpx.AsyncClient(timeout=3600.0) as client:
+                # Use streaming to avoid timeout on large model downloads
+                async with client.stream(
+                    "POST",
                     f"{self.base_url}/api/pull",
-                    json={"name": model_name, "stream": False}
+                    json={"name": model_name, "stream": True}
+                ) as response:
+                    if response.status_code != 200:
+                        return False
+                    # Consume the stream to completion
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                if data.get("status") == "success":
+                                    return True
+                            except json.JSONDecodeError:
+                                continue
+                    return True
+        except Exception:
+            return False
+
+    async def delete_model(self, model_name: str) -> bool:
+        """Delete a model from Ollama."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.delete(
+                    f"{self.base_url}/api/delete",
+                    json={"name": model_name}
                 )
                 return response.status_code == 200
         except Exception:

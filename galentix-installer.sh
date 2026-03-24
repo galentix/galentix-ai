@@ -110,34 +110,16 @@ else
     fi
 fi
 
-# Determine LLM engine and model
-log_info "Selecting optimal LLM configuration..."
+# Determine LLM engine
+log_info "Detecting optimal LLM engine..."
 
 LLM_ENGINE="ollama"
-SELECTED_MODEL="tinyllama"
 
 if [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 8 ]]; then
     LLM_ENGINE="vllm"
-    if [[ $GPU_VRAM_GB -ge 24 ]]; then
-        SELECTED_MODEL="meta-llama/Llama-3-70b-chat-hf"
-    elif [[ $GPU_VRAM_GB -ge 16 ]]; then
-        SELECTED_MODEL="meta-llama/Llama-3-8b-chat-hf"
-    else
-        SELECTED_MODEL="mistralai/Mistral-7B-Instruct-v0.2"
-    fi
-    log_success "Selected: vLLM with ${SELECTED_MODEL}"
+    log_success "GPU detected - vLLM engine available"
 else
-    # CPU-only: select model based on RAM
-    if [[ $TOTAL_RAM_GB -ge 16 ]]; then
-        SELECTED_MODEL="llama3:8b"
-    elif [[ $TOTAL_RAM_GB -ge 8 ]]; then
-        SELECTED_MODEL="mistral:7b"
-    elif [[ $TOTAL_RAM_GB -ge 4 ]]; then
-        SELECTED_MODEL="phi3:mini"
-    else
-        SELECTED_MODEL="tinyllama"
-    fi
-    log_success "Selected: Ollama with ${SELECTED_MODEL}"
+    log_success "Using Ollama engine (CPU inference)"
 fi
 
 # CPU info
@@ -161,7 +143,92 @@ echo "  RAM: ${TOTAL_RAM_GB}GB"
 echo "  CPU: ${CPU_CORES} cores"
 echo "  GPU: ${GPU_NAME}"
 echo "  LLM Engine: ${LLM_ENGINE}"
-echo "  Model: ${SELECTED_MODEL}"
+echo
+
+################################################################################
+# MODEL SELECTION MENU
+################################################################################
+
+echo "=============================================="
+echo "  Model Selection"
+echo "=============================================="
+echo
+
+# Build model menu based on hardware
+declare -a MENU_MODELS=()
+declare -a MENU_LABELS=()
+
+if [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 24 ]]; then
+    MENU_MODELS+=("llama3:70b")
+    MENU_LABELS+=("llama3:70b        [~40GB] - Large, highest quality")
+fi
+
+if [[ $TOTAL_RAM_GB -ge 16 ]] || [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 8 ]]; then
+    MENU_MODELS+=("llama3:8b")
+    MENU_LABELS+=("llama3:8b         [~8GB]  - Best quality for most hardware")
+fi
+
+if [[ $TOTAL_RAM_GB -ge 8 ]] || [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 8 ]]; then
+    MENU_MODELS+=("mistral:7b")
+    MENU_LABELS+=("mistral:7b        [~8GB]  - Fast and capable")
+fi
+
+if [[ $TOTAL_RAM_GB -ge 4 ]]; then
+    MENU_MODELS+=("phi3:mini")
+    MENU_LABELS+=("phi3:mini         [~4GB]  - Lightweight")
+fi
+
+MENU_MODELS+=("tinyllama")
+MENU_LABELS+=("tinyllama         [~2GB]  - Minimal resources")
+
+log_info "Recommended models for your system (${TOTAL_RAM_GB}GB RAM, GPU: ${GPU_NAME}):"
+echo
+for i in "${!MENU_MODELS[@]}"; do
+    echo "  $((i+1))) ${MENU_LABELS[$i]}"
+done
+echo "  C) Enter custom Ollama model ID(s)"
+echo
+
+read -rp "  Select models to download (comma-separated, e.g. 1,2) [default: 1]: " MODEL_CHOICE
+MODEL_CHOICE="${MODEL_CHOICE:-1}"
+
+# Parse selection
+declare -a SELECTED_MODELS=()
+
+if [[ "${MODEL_CHOICE^^}" == "C" ]]; then
+    read -rp "  Enter Ollama model ID(s), comma-separated (e.g. llama3:8b,mistral:7b): " CUSTOM_MODELS
+    IFS=',' read -ra CUSTOM_ARRAY <<< "$CUSTOM_MODELS"
+    for m in "${CUSTOM_ARRAY[@]}"; do
+        m=$(echo "$m" | xargs)  # trim whitespace
+        if [[ -n "$m" ]]; then
+            SELECTED_MODELS+=("$m")
+        fi
+    done
+else
+    IFS=',' read -ra CHOICES <<< "$MODEL_CHOICE"
+    for c in "${CHOICES[@]}"; do
+        c=$(echo "$c" | xargs)  # trim whitespace
+        idx=$((c - 1))
+        if [[ $idx -ge 0 && $idx -lt ${#MENU_MODELS[@]} ]]; then
+            SELECTED_MODELS+=("${MENU_MODELS[$idx]}")
+        else
+            log_warning "Invalid selection: $c (skipping)"
+        fi
+    done
+fi
+
+# Fallback if nothing selected
+if [[ ${#SELECTED_MODELS[@]} -eq 0 ]]; then
+    SELECTED_MODELS+=("${MENU_MODELS[0]}")
+    log_warning "No valid selection - defaulting to ${MENU_MODELS[0]}"
+fi
+
+# First model is the active model
+SELECTED_MODEL="${SELECTED_MODELS[0]}"
+
+echo
+log_success "Models to download: ${SELECTED_MODELS[*]}"
+log_success "Active model: ${SELECTED_MODEL}"
 echo
 
 ################################################################################
@@ -297,6 +364,14 @@ INSTALL_TIME=$(date +%s)
 # Generate unique device ID
 DEVICE_UUID=$(echo "${MAC_ADDR}-${CPU_ID}-${BOARD_SERIAL}-${INSTALL_TIME}" | sha256sum | cut -d' ' -f1 | head -c 32)
 
+# Build models JSON array
+MODELS_JSON="["
+for i in "${!SELECTED_MODELS[@]}"; do
+    if [[ $i -gt 0 ]]; then MODELS_JSON+=", "; fi
+    MODELS_JSON+="\"${SELECTED_MODELS[$i]}\""
+done
+MODELS_JSON+="]"
+
 # Create device config
 cat > "${CONFIG_DIR}/device.json" << EOF
 {
@@ -312,7 +387,8 @@ cat > "${CONFIG_DIR}/device.json" << EOF
     },
     "llm": {
         "engine": "${LLM_ENGINE}",
-        "model": "${SELECTED_MODEL}"
+        "model": "${SELECTED_MODEL}",
+        "models": ${MODELS_JSON}
     },
     "version": "${VERSION}"
 }
@@ -527,16 +603,24 @@ else
     log_warning "Ollama service status unknown - continuing"
 fi
 
-# Download selected model
-log_info "Downloading ${SELECTED_MODEL} model (this may take several minutes)..."
+# Download all selected models
+log_info "Downloading ${#SELECTED_MODELS[@]} model(s)..."
 if [[ "${LLM_ENGINE}" == "ollama" ]]; then
-    ollama pull "${SELECTED_MODEL}" 2>&1 || log_warning "Model download had issues"
-    
+    for i in "${!SELECTED_MODELS[@]}"; do
+        model="${SELECTED_MODELS[$i]}"
+        log_info "Downloading model $((i+1))/${#SELECTED_MODELS[@]}: ${model} (this may take several minutes)..."
+        if ollama pull "${model}" 2>&1; then
+            log_success "Model ${model} downloaded"
+        else
+            log_warning "Download of ${model} had issues"
+        fi
+    done
+
     # Also download embedding model for RAG
     log_info "Downloading embedding model for RAG..."
     ollama pull nomic-embed-text 2>&1 || log_warning "Embedding model download had issues"
-    
-    log_success "Models downloaded"
+
+    log_success "All models downloaded"
 fi
 
 # Install vLLM if GPU detected
@@ -637,6 +721,7 @@ cat > "${CONFIG_DIR}/settings.json" << EOF
     "llm": {
         "engine": "${LLM_ENGINE}",
         "model": "${SELECTED_MODEL}",
+        "models": ${MODELS_JSON},
         "ollama_url": "http://127.0.0.1:11434",
         "vllm_url": "http://127.0.0.1:8000",
         "temperature": 0.7,
@@ -798,7 +883,8 @@ echo "  RAM: ${TOTAL_RAM_GB}GB"
 echo "  CPU: ${CPU_CORES} cores"
 echo "  GPU: ${GPU_NAME}"
 echo "  LLM Engine: ${LLM_ENGINE}"
-echo "  Model: ${SELECTED_MODEL}"
+echo "  Active Model: ${SELECTED_MODEL}"
+echo "  All Models: ${SELECTED_MODELS[*]}"
 echo
 echo "  Access Points:"
 echo "  --------------"

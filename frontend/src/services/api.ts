@@ -10,7 +10,8 @@ import type {
   Settings,
   ChatRequest,
   StreamChunk,
-  WebSearchResult
+  WebSearchResult,
+  ModelListResponse
 } from '../types';
 
 const API_BASE = '/api';
@@ -197,4 +198,32 @@ export async function getSystemStats(): Promise<SystemStats> {
 
 export async function getSettings(): Promise<Settings> {
   return fetchJson(`${API_BASE}/system/settings`);
+}
+
+// ============================================
+// Model Management API
+// ============================================
+
+export async function getModels(): Promise<ModelListResponse> {
+  return fetchJson(`${API_BASE}/system/models`);
+}
+
+export async function pullModel(modelName: string): Promise<{ success: boolean; message: string; model_name: string }> {
+  return fetchJson(`${API_BASE}/system/models/pull`, {
+    method: 'POST',
+    body: JSON.stringify({ model_name: modelName }),
+  });
+}
+
+export async function switchModel(modelName: string): Promise<{ success: boolean; message: string; active_model: string }> {
+  return fetchJson(`${API_BASE}/system/models/switch`, {
+    method: 'POST',
+    body: JSON.stringify({ model_name: modelName }),
+  });
+}
+
+export async function deleteModel(modelName: string): Promise<{ success: boolean; message: string }> {
+  return fetchJson(`${API_BASE}/system/models/${encodeURIComponent(modelName)}`, {
+    method: 'DELETE',
+  });
 }
