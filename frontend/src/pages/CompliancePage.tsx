@@ -26,7 +26,6 @@ export default function CompliancePage() {
   const isAdmin = authUser?.role === 'admin';
 
   const [stats, setStats] = useState<SystemStats | null>(null);
-  const [, setSettings] = useState<Record<string, unknown> | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [retentionDays, setRetentionDays] = useState<number>(0);
@@ -41,13 +40,12 @@ export default function CompliancePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, settingsData, searchStatus] = await Promise.all([
+        const [statsData, , searchStatus] = await Promise.all([
           api.getSystemStats(),
           api.getSettings(),
           api.getSearchStatus(),
         ]);
         setStats(statsData);
-        setSettings(settingsData);
         setWebSearchEnabled(searchStatus.enabled);
       } catch (err) {
         console.error('Failed to load compliance data:', err);
