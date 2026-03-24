@@ -3,6 +3,7 @@ Galentix AI - Configuration Management
 """
 import json
 import os
+import secrets
 from pathlib import Path
 from typing import Optional
 from pydantic_settings import BaseSettings
@@ -43,10 +44,18 @@ class Settings(BaseSettings):
     search_enabled: bool = True
     searxng_url: str = "http://127.0.0.1:8888"
     search_max_results: int = 5
+    search_language: str = "en"  # "en", "ar", or "all"
     
     # Database
     database_url: str = "sqlite+aiosqlite:///data/galentix.db"
     
+    # Auth settings
+    jwt_secret_key: str = ""
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_days: int = 7
+    allowed_origins: list[str] = []
+
     # UI Settings
     brand_name: str = "Galentix AI"
     brand_color: str = "#6BBF9E"
@@ -93,13 +102,22 @@ def load_settings() -> Settings:
                 settings.search_enabled = search.get('enabled', settings.search_enabled)
                 settings.searxng_url = search.get('searxng_url', settings.searxng_url)
                 settings.search_max_results = search.get('max_results', settings.search_max_results)
+                settings.search_language = search.get('language', settings.search_language)
             
+            if 'auth' in config_data:
+                auth = config_data['auth']
+                settings.jwt_secret_key = auth.get('jwt_secret_key', settings.jwt_secret_key)
+                settings.jwt_algorithm = auth.get('jwt_algorithm', settings.jwt_algorithm)
+                settings.jwt_access_token_expire_minutes = auth.get('jwt_access_token_expire_minutes', settings.jwt_access_token_expire_minutes)
+                settings.jwt_refresh_token_expire_days = auth.get('jwt_refresh_token_expire_days', settings.jwt_refresh_token_expire_days)
+                settings.allowed_origins = auth.get('allowed_origins', settings.allowed_origins)
+
             if 'ui' in config_data:
                 ui = config_data['ui']
                 settings.brand_name = ui.get('brand_name', settings.brand_name)
                 settings.brand_color = ui.get('brand_color', settings.brand_color)
                 settings.ui_theme = ui.get('theme', settings.ui_theme)
-                
+
         except Exception as e:
             print(f"Warning: Could not load config file: {e}")
     
@@ -110,7 +128,12 @@ def load_settings() -> Settings:
     # Update database URL with actual path
     db_path = settings.data_dir / "galentix.db"
     settings.database_url = f"sqlite+aiosqlite:///{db_path}"
-    
+
+    # Auto-generate JWT secret if empty
+    if not settings.jwt_secret_key:
+        settings.jwt_secret_key = secrets.token_hex(32)
+        save_settings(settings)
+
     return settings
 
 
@@ -137,7 +160,15 @@ def save_settings(current_settings: Settings) -> None:
         "search": {
             "enabled": current_settings.search_enabled,
             "searxng_url": current_settings.searxng_url,
-            "max_results": current_settings.search_max_results
+            "max_results": current_settings.search_max_results,
+            "language": current_settings.search_language
+        },
+        "auth": {
+            "jwt_secret_key": current_settings.jwt_secret_key,
+            "jwt_algorithm": current_settings.jwt_algorithm,
+            "jwt_access_token_expire_minutes": current_settings.jwt_access_token_expire_minutes,
+            "jwt_refresh_token_expire_days": current_settings.jwt_refresh_token_expire_days,
+            "allowed_origins": current_settings.allowed_origins
         },
         "ui": {
             "brand_name": current_settings.brand_name,
@@ -153,19 +184,27 @@ def save_settings(current_settings: Settings) -> None:
         print(f"Warning: Could not save config file: {e}")
 
 
+_device_info_cache = None
+
+
 def load_device_info() -> dict:
-    """Load device information from config file."""
+    """Load device information from config file. Cached after first load."""
+    global _device_info_cache
+    if _device_info_cache is not None:
+        return _device_info_cache
+
     settings = load_settings()
     device_file = settings.config_dir / "device.json"
-    
+
     if device_file.exists():
         try:
             with open(device_file, 'r') as f:
-                return json.load(f)
+                _device_info_cache = json.load(f)
+                return _device_info_cache
         except Exception:
             pass
-    
-    return {
+
+    _device_info_cache = {
         "device_id": "unknown",
         "hardware": {
             "ram_gb": 0,
@@ -179,6 +218,7 @@ def load_device_info() -> dict:
         },
         "version": "2.0.0"
     }
+    return _device_info_cache
 
 
 # Global settings instance

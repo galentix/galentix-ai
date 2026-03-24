@@ -109,6 +109,14 @@ export interface Settings {
   };
 }
 
+export interface SettingsUpdate {
+  temperature?: number;
+  max_tokens?: number;
+  rag_enabled?: boolean;
+  rag_top_k?: number;
+  search_enabled?: boolean;
+}
+
 export interface ChatRequest {
   message: string;
   conversation_id?: string;

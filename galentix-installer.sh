@@ -18,6 +18,7 @@ set -euo pipefail
 ################################################################################
 
 VERSION="2.0.0"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/galentix"
 DATA_DIR="${INSTALL_DIR}/data"
 CONFIG_DIR="${INSTALL_DIR}/config"
@@ -92,17 +93,25 @@ GPU_DETECTED=0
 GPU_VRAM_GB=0
 GPU_NAME="None"
 
+# Find nvidia-smi (standard path or WSL path)
+NVIDIA_SMI=""
 if command -v nvidia-smi &> /dev/null; then
-    if nvidia-smi &> /dev/null; then
+    NVIDIA_SMI="nvidia-smi"
+elif [[ -f /usr/lib/wsl/lib/nvidia-smi ]]; then
+    NVIDIA_SMI="/usr/lib/wsl/lib/nvidia-smi"
+fi
+
+if [[ -n "$NVIDIA_SMI" ]]; then
+    if $NVIDIA_SMI &> /dev/null; then
         GPU_DETECTED=1
-        GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits | head -n1)
-        GPU_VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
+        GPU_NAME=$($NVIDIA_SMI --query-gpu=name --format=csv,noheader,nounits | head -n1)
+        GPU_VRAM_MB=$($NVIDIA_SMI --query-gpu=memory.total --format=csv,noheader,nounits | head -n1)
         GPU_VRAM_GB=$((GPU_VRAM_MB / 1024))
         log_success "NVIDIA GPU detected: ${GPU_NAME} (${GPU_VRAM_GB}GB VRAM)"
     fi
 else
     # Check for NVIDIA hardware without drivers
-    if lspci | grep -i nvidia &> /dev/null; then
+    if command -v lspci &> /dev/null && lspci | grep -i nvidia &> /dev/null; then
         log_warning "NVIDIA GPU found but drivers not installed"
         log_info "Consider installing NVIDIA drivers for better performance"
     else
@@ -158,28 +167,56 @@ echo
 declare -a MENU_MODELS=()
 declare -a MENU_LABELS=()
 
-if [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 24 ]]; then
+# Use VRAM if GPU detected, otherwise RAM
+if [[ $GPU_DETECTED -eq 1 ]]; then
+    AVAILABLE_MEM=$GPU_VRAM_GB
+    MEM_TYPE="VRAM"
+else
+    AVAILABLE_MEM=$TOTAL_RAM_GB
+    MEM_TYPE="RAM"
+fi
+
+# Large (48GB+)
+if [[ $AVAILABLE_MEM -ge 48 ]]; then
     MENU_MODELS+=("llama3:70b")
-    MENU_LABELS+=("llama3:70b        [~40GB] - Large, highest quality")
+    MENU_LABELS+=("llama3:70b           [~40GB] - Largest, highest quality")
 fi
 
-if [[ $TOTAL_RAM_GB -ge 16 ]] || [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 8 ]]; then
+# Medium-large (24-48GB) - sweet spot for 32GB VRAM GPUs
+if [[ $AVAILABLE_MEM -ge 24 ]]; then
+    MENU_MODELS+=("mixtral:8x7b")
+    MENU_LABELS+=("mixtral:8x7b         [~26GB] - Mixture of experts, excellent quality")
+    MENU_MODELS+=("llama3:70b-q4_0")
+    MENU_LABELS+=("llama3:70b-q4_0      [~24GB] - 70B quantized, fits 32GB VRAM")
+    MENU_MODELS+=("command-r:35b")
+    MENU_LABELS+=("command-r:35b        [~20GB] - Strong reasoning, 35B params")
+fi
+
+# Medium (12-24GB)
+if [[ $AVAILABLE_MEM -ge 12 ]]; then
+    MENU_MODELS+=("llama3:13b")
+    MENU_LABELS+=("llama3:13b           [~13GB] - Great balance of speed and quality")
+    MENU_MODELS+=("codellama:13b")
+    MENU_LABELS+=("codellama:13b        [~13GB] - Optimized for code generation")
+fi
+
+# Standard (8GB+)
+if [[ $AVAILABLE_MEM -ge 8 ]]; then
     MENU_MODELS+=("llama3:8b")
-    MENU_LABELS+=("llama3:8b         [~8GB]  - Best quality for most hardware")
-fi
-
-if [[ $TOTAL_RAM_GB -ge 8 ]] || [[ $GPU_DETECTED -eq 1 && $GPU_VRAM_GB -ge 8 ]]; then
+    MENU_LABELS+=("llama3:8b            [~8GB]  - Popular, fast and capable")
     MENU_MODELS+=("mistral:7b")
-    MENU_LABELS+=("mistral:7b        [~8GB]  - Fast and capable")
+    MENU_LABELS+=("mistral:7b           [~8GB]  - Fast and efficient")
 fi
 
-if [[ $TOTAL_RAM_GB -ge 4 ]]; then
+# Small (4GB+)
+if [[ $AVAILABLE_MEM -ge 4 ]]; then
     MENU_MODELS+=("phi3:mini")
-    MENU_LABELS+=("phi3:mini         [~4GB]  - Lightweight")
+    MENU_LABELS+=("phi3:mini            [~4GB]  - Lightweight")
 fi
 
+# Minimal
 MENU_MODELS+=("tinyllama")
-MENU_LABELS+=("tinyllama         [~2GB]  - Minimal resources")
+MENU_LABELS+=("tinyllama            [~2GB]  - Minimal resources")
 
 log_info "Recommended models for your system (${TOTAL_RAM_GB}GB RAM, GPU: ${GPU_NAME}):"
 echo
@@ -254,13 +291,15 @@ log_success "System updated"
 # Install base packages
 log_step "[2/12] Installing base packages..."
 PACKAGES=(
-    curl wget git htop unzip
+    curl wget git htop unzip zstd
     ca-certificates gnupg lsb-release
     ufw fail2ban
     python3 python3-venv python3-pip python3-dev
     build-essential
     sqlite3 libsqlite3-dev
-    poppler-utils  # For PDF processing
+    poppler-utils  # For PDF processing / pdf2image
+    tesseract-ocr  # OCR for scanned PDFs
+    tesseract-ocr-eng  # English OCR data
 )
 
 for pkg in "${PACKAGES[@]}"; do
@@ -409,14 +448,17 @@ echo
 
 log_step "[7/12] Configuring SSH security..."
 
-# Backup original sshd_config
-cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
+if [[ -f /etc/ssh/sshd_config ]]; then
+    # Backup original sshd_config
+    cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
 
-# Configure SSH with password authentication for development
-cat > /etc/ssh/sshd_config.d/galentix-config.conf << 'EOF'
+    # Configure SSH with key-only authentication
+    mkdir -p /etc/ssh/sshd_config.d
+    cat > /etc/ssh/sshd_config.d/galentix-config.conf << 'EOF'
 # Galentix AI SSH Configuration
 
-PasswordAuthentication yes
+# Disabled for security - SSH key auth only
+PasswordAuthentication no
 ChallengeResponseAuthentication no
 UsePAM yes
 PermitRootLogin no
@@ -430,9 +472,12 @@ MaxAuthTries 5
 LoginGraceTime 60
 EOF
 
-# Restart SSH (Ubuntu uses 'ssh' not 'sshd')
-systemctl restart ssh || systemctl restart sshd || log_warning "Could not restart SSH service"
-log_success "SSH configured - password authentication enabled for development"
+    # Restart SSH (Ubuntu uses 'ssh' not 'sshd')
+    systemctl restart ssh || systemctl restart sshd || log_warning "Could not restart SSH service"
+    log_success "SSH configured - key-only authentication enabled"
+else
+    log_warning "SSH server not installed - skipping SSH hardening (normal for WSL2)"
+fi
 
 ################################################################################
 # PHASE 6: FIREWALL CONFIGURATION
@@ -446,23 +491,27 @@ echo
 
 log_step "[8/12] Configuring firewall..."
 
-# Reset UFW to defaults
-ufw --force reset > /dev/null 2>&1
+if command -v ufw &> /dev/null; then
+    # Reset UFW to defaults
+    ufw --force reset > /dev/null 2>&1
 
-# Set default policies
-ufw default deny incoming
-ufw default allow outgoing
+    # Set default policies
+    ufw default deny incoming
+    ufw default allow outgoing
 
-# Allow SSH (for support access)
-ufw allow ssh
+    # Allow SSH (for support access)
+    ufw allow ssh
 
-# Allow web interface
-ufw allow 8080/tcp
+    # Allow web interface
+    ufw allow 8080/tcp
 
-# Enable firewall
-ufw --force enable > /dev/null 2>&1
+    # Enable firewall
+    ufw --force enable > /dev/null 2>&1
 
-log_success "Firewall configured (ports 22, 8080 open)"
+    log_success "Firewall configured (ports 22, 8080 open)"
+else
+    log_warning "UFW not available - skipping firewall configuration (normal for WSL2)"
+fi
 
 ################################################################################
 # PHASE 7: SEARXNG SETUP (DOCKER)
@@ -479,8 +528,11 @@ log_step "[9/12] Setting up SearXNG..."
 # Create SearXNG directory
 mkdir -p "${INSTALL_DIR}/searxng"
 
+# Generate random secret key for SearXNG
+SEARXNG_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+
 # Create SearXNG settings
-cat > "${INSTALL_DIR}/searxng/settings.yml" << 'EOF'
+cat > "${INSTALL_DIR}/searxng/settings.yml" << EOF
 use_default_settings: true
 
 general:
@@ -495,7 +547,7 @@ search:
   default_lang: "en"
 
 server:
-  secret_key: "galentix-searxng-secret-key-change-in-production"
+  secret_key: "$SEARXNG_SECRET"
   limiter: false
   image_proxy: true
   http_protocol_version: "1.1"
@@ -603,25 +655,23 @@ else
     log_warning "Ollama service status unknown - continuing"
 fi
 
-# Download all selected models
-log_info "Downloading ${#SELECTED_MODELS[@]} model(s)..."
-if [[ "${LLM_ENGINE}" == "ollama" ]]; then
-    for i in "${!SELECTED_MODELS[@]}"; do
-        model="${SELECTED_MODELS[$i]}"
-        log_info "Downloading model $((i+1))/${#SELECTED_MODELS[@]}: ${model} (this may take several minutes)..."
-        if ollama pull "${model}" 2>&1; then
-            log_success "Model ${model} downloaded"
-        else
-            log_warning "Download of ${model} had issues"
-        fi
-    done
+# Download all selected models via Ollama (always needed, even with vLLM as primary engine)
+log_info "Downloading ${#SELECTED_MODELS[@]} model(s) via Ollama..."
+for i in "${!SELECTED_MODELS[@]}"; do
+    model="${SELECTED_MODELS[$i]}"
+    log_info "Downloading model $((i+1))/${#SELECTED_MODELS[@]}: ${model} (this may take several minutes)..."
+    if ollama pull "${model}" 2>&1; then
+        log_success "Model ${model} downloaded"
+    else
+        log_warning "Download of ${model} had issues"
+    fi
+done
 
-    # Also download embedding model for RAG
-    log_info "Downloading embedding model for RAG..."
-    ollama pull nomic-embed-text 2>&1 || log_warning "Embedding model download had issues"
+# Also download embedding model for RAG
+log_info "Downloading embedding model for RAG..."
+ollama pull nomic-embed-text 2>&1 || log_warning "Embedding model download had issues"
 
-    log_success "All models downloaded"
-fi
+log_success "All models downloaded"
 
 # Install vLLM if GPU detected
 if [[ $GPU_DETECTED -eq 1 ]]; then
@@ -762,6 +812,12 @@ echo
 
 log_info "Creating systemd service files..."
 
+# Check if systemd is available (not available in some WSL2 setups)
+HAS_SYSTEMD=0
+if command -v systemctl &> /dev/null && systemctl --version &> /dev/null; then
+    HAS_SYSTEMD=1
+fi
+
 # Create backend service
 cat > /etc/systemd/system/galentix-backend.service << 'EOF'
 [Unit]
@@ -812,17 +868,68 @@ ExecStop=/usr/bin/docker compose down
 WantedBy=multi-user.target
 EOF
 
-# Reload systemd
-systemctl daemon-reload
-
-# Enable services (but don't start backend yet - no code)
-systemctl enable galentix-searxng
-systemctl enable galentix-backend 2>/dev/null || true
-
-log_success "Systemd services created"
+# Reload and enable systemd services if available
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
+    systemctl daemon-reload
+    systemctl enable galentix-searxng
+    systemctl enable galentix-backend 2>/dev/null || true
+    log_success "Systemd services created and enabled"
+else
+    log_warning "Systemd not available (WSL2). Service files created but not enabled."
+    log_info "To start manually:"
+    log_info "  /opt/galentix/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080"
+fi
 
 ################################################################################
-# PHASE 12: FINAL VERIFICATION
+# PHASE 12: CODE DEPLOYMENT
+################################################################################
+
+echo
+echo "=============================================="
+echo "  PHASE 12: Code Deployment"
+echo "=============================================="
+echo
+
+log_step "[13/14] Deploying backend..."
+if [[ -d "${SCRIPT_DIR}/backend" ]]; then
+    cp -r "${SCRIPT_DIR}/backend/"* "${INSTALL_DIR}/backend/"
+    log_success "Backend code deployed"
+else
+    log_warning "Backend directory not found in ${SCRIPT_DIR} - skipping"
+fi
+
+log_step "[14/14] Building and deploying frontend..."
+if [[ -d "${SCRIPT_DIR}/frontend" ]]; then
+    cd "${SCRIPT_DIR}/frontend"
+    npm install --silent 2>&1 | tail -1
+    npm run build 2>&1 | tail -1
+    cp -r dist/* "${INSTALL_DIR}/frontend/"
+    log_success "Frontend built and deployed"
+else
+    log_warning "Frontend directory not found in ${SCRIPT_DIR} - skipping"
+fi
+
+# Fix ownership
+chown -R galentix:galentix "${INSTALL_DIR}"
+log_success "Permissions set"
+
+# Start the backend
+if [[ $HAS_SYSTEMD -eq 1 ]]; then
+    systemctl start galentix-backend
+    log_success "Backend service started"
+else
+    log_info "Starting backend manually..."
+    sudo -u galentix bash -c "cd ${INSTALL_DIR}/backend && ${INSTALL_DIR}/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 &" 2>/dev/null
+    sleep 3
+    if curl -s http://localhost:8080/api/system/health > /dev/null 2>&1; then
+        log_success "Backend started successfully"
+    else
+        log_warning "Backend may still be starting up. Check: curl http://localhost:8080/api/system/health"
+    fi
+fi
+
+################################################################################
+# PHASE 13: FINAL VERIFICATION
 ################################################################################
 
 echo
@@ -888,7 +995,7 @@ echo "  All Models: ${SELECTED_MODELS[*]}"
 echo
 echo "  Access Points:"
 echo "  --------------"
-echo "  Web UI: http://${IP_ADDR}:8080 (after backend deployment)"
+echo "  Web UI: http://${IP_ADDR}:8080"
 echo "  SSH:    ssh support@${IP_ADDR}"
 echo
 echo "  Service Management:"
@@ -908,13 +1015,6 @@ echo "  SSH Access:"
 echo "  -----------"
 echo "  Only key-based authentication is allowed."
 echo "  Use the master support key to connect."
-echo
-echo "=============================================="
-echo
-echo "  NEXT STEPS:"
-echo "  1. Deploy backend code to ${INSTALL_DIR}/backend"
-echo "  2. Deploy frontend build to ${INSTALL_DIR}/frontend"
-echo "  3. Start the backend: sudo systemctl start galentix-backend"
 echo
 echo "=============================================="
 echo

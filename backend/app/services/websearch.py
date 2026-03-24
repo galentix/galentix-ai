@@ -22,7 +22,7 @@ class WebSearchService:
     Web search service using SearXNG.
     Provides privacy-focused web search capabilities.
     """
-    
+
     def __init__(
         self,
         base_url: str = "http://127.0.0.1:8888",
@@ -30,59 +30,66 @@ class WebSearchService:
     ):
         self.base_url = base_url
         self.max_results = max_results
+        self._client = httpx.AsyncClient(base_url=base_url, timeout=30.0)
+
+    async def close(self):
+        """Close the persistent HTTP client."""
+        await self._client.aclose()
     
     async def search(
         self,
         query: str,
         max_results: Optional[int] = None,
-        categories: Optional[List[str]] = None
+        categories: Optional[List[str]] = None,
+        language: Optional[str] = None
     ) -> List[SearchResult]:
         """
         Search the web using SearXNG.
-        
+
         Args:
             query: Search query
             max_results: Maximum number of results to return
             categories: Categories to search (general, images, news, etc.)
-        
+            language: Search language ("en", "ar", "all"). Defaults to settings.search_language.
+
         Returns:
             List of search results
         """
         if not query or not query.strip():
             return []
-        
+
         max_results = max_results or self.max_results
         categories = categories or ["general"]
-        
+        language = language or settings.search_language
+
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(
-                    f"{self.base_url}/search",
-                    params={
-                        "q": query,
-                        "format": "json",
-                        "categories": ",".join(categories),
-                        "language": "en",
-                        "safesearch": 0
-                    }
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    results = []
-                    
-                    for item in data.get("results", [])[:max_results]:
-                        results.append(SearchResult(
-                            title=item.get("title", ""),
-                            url=item.get("url", ""),
-                            snippet=item.get("content", ""),
-                            source=item.get("engine", "unknown")
-                        ))
-                    
-                    return results
-                else:
-                    print(f"Search error: {response.status_code}")
-                    return []
+            response = await self._client.get(
+                "/search",
+                params={
+                    "q": query,
+                    "format": "json",
+                    "categories": ",".join(categories),
+                    "language": language,
+                    "safesearch": 0
+                }
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                results = []
+
+                for item in data.get("results", [])[:max_results]:
+                    results.append(SearchResult(
+                        title=item.get("title", ""),
+                        url=item.get("url", ""),
+                        snippet=item.get("content", ""),
+                        source=item.get("engine", "unknown")
+                    ))
+
+                return results
+            else:
+                print(f"Search error: {response.status_code}")
+                return []
         except Exception as e:
             print(f"Search exception: {e}")
             return []
@@ -132,13 +139,12 @@ class WebSearchService:
     async def health_check(self) -> bool:
         """Check if SearXNG is available."""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}/healthz")
-                if response.status_code == 200:
-                    return True
-                # Fallback check
-                response = await client.get(f"{self.base_url}/")
-                return response.status_code == 200
+            response = await self._client.get("/healthz", timeout=5.0)
+            if response.status_code == 200:
+                return True
+            # Fallback check
+            response = await self._client.get("/", timeout=5.0)
+            return response.status_code == 200
         except Exception:
             return False
 

@@ -181,11 +181,13 @@ class SettingsResponse(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    """Update settings request."""
-    llm: Optional[dict] = None
-    rag: Optional[dict] = None
-    search: Optional[dict] = None
-    ui: Optional[dict] = None
+    """Update settings request (partial updates)."""
+    temperature: Optional[float] = Field(None, ge=0.0, le=1.0, description="LLM temperature")
+    max_tokens: Optional[int] = Field(None, ge=256, le=8192, description="LLM max tokens")
+    rag_enabled: Optional[bool] = Field(None, description="Enable/disable RAG")
+    rag_top_k: Optional[int] = Field(None, ge=1, le=20, description="RAG top-K results")
+    search_enabled: Optional[bool] = Field(None, description="Enable/disable web search")
+    search_language: Optional[str] = Field(None, pattern="^(en|ar|all)$", description="Search language: en, ar, or all")
 
 
 # ============================================
@@ -197,6 +199,8 @@ class ModelInfo(BaseModel):
     name: str
     size: str = ""
     is_active: bool = False
+    arabic_capable: bool = False
+    languages: List[str] = Field(default=[], description="Known supported languages")
 
 
 class ModelListResponse(BaseModel):
@@ -220,3 +224,35 @@ class ModelPullResponse(BaseModel):
 class ModelSwitchRequest(BaseModel):
     """Request to switch active model."""
     model_name: str = Field(..., description="Model to switch to")
+
+
+# ============================================
+# Backup Schemas
+# ============================================
+
+class BackupResponse(BaseModel):
+    """Response after backup creation."""
+    success: bool
+    filename: str
+    size_bytes: int
+    message: str
+
+
+class BackupListItem(BaseModel):
+    """Single backup entry."""
+    filename: str
+    size_bytes: int
+    created_at: str
+
+
+class BackupListResponse(BaseModel):
+    """List of available backups."""
+    backups: List[BackupListItem]
+    total: int
+
+
+class PurgeResponse(BaseModel):
+    """Response after data purge."""
+    success: bool
+    message: str
+    deleted: dict

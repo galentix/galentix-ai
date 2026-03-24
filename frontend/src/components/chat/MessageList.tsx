@@ -8,7 +8,7 @@ interface MessageListProps {
 
 export default function MessageList({ messages, streamingContent }: MessageListProps) {
   return (
-    <div className="space-y-4 max-w-3xl mx-auto">
+    <div className="space-y-4 max-w-3xl mx-auto" role="log" aria-live="polite" aria-label="Chat messages">
       {messages.map((message) => (
         <Message key={message.id} message={message} />
       ))}

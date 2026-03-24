@@ -9,21 +9,21 @@ export default {
     extend: {
       colors: {
         galentix: {
-          50: '#edfcf5',
-          100: '#d3f8e6',
-          200: '#aaf0d1',
-          300: '#6bbf9e', // Primary brand color
-          400: '#4aab89',
-          500: '#2d8f70',
-          600: '#1f735a',
-          700: '#1a5c49',
-          800: '#17493b',
-          900: '#143d32',
-          950: '#0a221c',
+          50: '#f0faf6',
+          100: '#d1f2e4',
+          200: '#a3e5c9',
+          300: '#6fd4aa',
+          400: '#6BBF9E',  // keep close to brand
+          500: '#6BBF9E',  // brand primary
+          600: '#4a9f7e',
+          700: '#3a7d63',
+          800: '#2b5c49',
+          900: '#1c3c30',
+          950: '#0e1f19',
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Inter', 'IBM Plex Sans Arabic', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       animation: {
@@ -31,5 +31,8 @@ export default {
       }
     },
   },
-  plugins: [],
+  plugins: [
+    require('@tailwindcss/typography'),
+    require('@tailwindcss/forms'),
+  ],
 }

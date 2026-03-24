@@ -6,34 +6,42 @@ import json
 import uuid
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..database import get_db
 from ..models.conversation import Conversation, Message
+from ..models.user import User
 from ..models.schemas import ChatRequest, ChatResponse
 from ..services.llm import get_llm_service, LLMService
 from ..services.llm.base import LLMMessage
 from ..services.rag import get_rag_pipeline
 from ..services.websearch import get_search_service
+from ..services.auth import get_current_user
 from ..config import settings
+from ..rate_limit import limiter
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
-# System prompt for Galentix AI
-SYSTEM_PROMPT = """You are Galentix AI, a helpful, intelligent assistant running locally on this device. 
+# Bilingual system prompt for Galentix AI (English + Arabic)
+SYSTEM_PROMPT = """You are Galentix AI, a helpful, intelligent assistant running locally on this device.
 You are privacy-focused and never send data to external servers unless the user explicitly asks for a web search.
+You can communicate in both English and Arabic. Respond in the same language the user writes in.
 
-Key capabilities:
-- Answer questions using your knowledge
-- Search uploaded documents (RAG) for relevant information
-- Search the web when asked (using privacy-focused search)
-- Help with analysis, writing, coding, and general tasks
+أنت Galentix AI، مساعد ذكي يعمل محلياً على هذا الجهاز.
+تركز على الخصوصية ولا ترسل بيانات إلى خوادم خارجية إلا إذا طلب المستخدم بحثاً عبر الإنترنت.
+يمكنك التواصل بالعربية والإنجليزية. أجب بنفس اللغة التي يكتب بها المستخدم.
+
+Key capabilities / القدرات الرئيسية:
+- Answer questions using your knowledge / الإجابة على الأسئلة
+- Search uploaded documents (RAG) / البحث في المستندات المرفوعة
+- Search the web when asked / البحث في الإنترنت عند الطلب
+- Help with analysis, writing, coding / المساعدة في التحليل والكتابة والبرمجة
 
 When using information from documents or web search, always cite your sources.
-Be helpful, accurate, and concise. If you don't know something, say so honestly.
+عند استخدام معلومات من المستندات أو البحث، اذكر مصادرك دائماً.
 """
 
 
@@ -57,12 +65,9 @@ async def generate_response_stream(
     # RAG context
     if use_rag and settings.rag_enabled:
         try:
-            rag_context = await rag.build_context(message, top_k=settings.rag_top_k)
+            rag_context, rag_results = await rag.build_context(message, top_k=settings.rag_top_k)
             if rag_context:
                 context_parts.append(f"## Relevant Documents:\n{rag_context}")
-                
-                # Get source info
-                rag_results = await rag.search(message, top_k=settings.rag_top_k)
                 for r in rag_results:
                     sources.append({
                         "type": "document",
@@ -72,7 +77,7 @@ async def generate_response_stream(
                     })
         except Exception as e:
             print(f"RAG error: {e}")
-    
+
     # Web search context
     if use_web_search and settings.search_enabled:
         try:
@@ -167,28 +172,35 @@ async def generate_response_stream(
 
 
 @router.post("/stream")
+@limiter.limit("10/minute")
 async def chat_stream(
     request: ChatRequest,
-    db: AsyncSession = Depends(get_db)
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Stream chat response with SSE."""
-    
+
     # Get or create conversation
     conversation_id = request.conversation_id
-    
+
     if not conversation_id:
         # Create new conversation
         conversation = Conversation(
             id=str(uuid.uuid4()),
-            title="New Conversation"
+            title="New Conversation",
+            user_id=current_user.id
         )
         db.add(conversation)
         await db.commit()
         conversation_id = conversation.id
     else:
-        # Verify conversation exists
+        # Verify conversation exists and belongs to current user
         result = await db.execute(
-            select(Conversation).where(Conversation.id == conversation_id)
+            select(Conversation).where(
+                Conversation.id == conversation_id,
+                Conversation.user_id == current_user.id
+            )
         )
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Conversation not found")
@@ -211,22 +223,26 @@ async def chat_stream(
 
 
 @router.post("/", response_model=ChatResponse)
+@limiter.limit("10/minute")
 async def chat(
     request: ChatRequest,
-    db: AsyncSession = Depends(get_db)
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """Non-streaming chat endpoint."""
     llm = get_llm_service()
     rag = get_rag_pipeline()
     search = get_search_service()
-    
+
     # Get or create conversation
     conversation_id = request.conversation_id
-    
+
     if not conversation_id:
         conversation = Conversation(
             id=str(uuid.uuid4()),
-            title="New Conversation"
+            title="New Conversation",
+            user_id=current_user.id
         )
         db.add(conversation)
         await db.commit()
@@ -240,10 +256,9 @@ async def chat(
     # RAG context
     if request.use_rag and settings.rag_enabled:
         try:
-            rag_context = await rag.build_context(request.message, top_k=settings.rag_top_k)
+            rag_context, rag_results = await rag.build_context(request.message, top_k=settings.rag_top_k)
             if rag_context:
                 context_parts.append(f"## Relevant Documents:\n{rag_context}")
-                rag_results = await rag.search(request.message, top_k=settings.rag_top_k)
                 for r in rag_results:
                     sources.append({
                         "type": "document",
@@ -312,5 +327,5 @@ async def chat(
         conversation_id=conversation_id,
         sources=sources,
         web_results=web_results,
-        skills_used=["rag"] if sources else [] + ["web_search"] if web_results else []
+        skills_used=(["rag"] if sources else []) + (["web_search"] if web_results else [])
     )

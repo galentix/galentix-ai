@@ -8,11 +8,13 @@ import type {
   DeviceInfo,
   SystemStats,
   Settings,
+  SettingsUpdate,
   ChatRequest,
   StreamChunk,
   WebSearchResult,
   ModelListResponse
 } from '../types';
+import { useAuthStore } from '../stores/authStore';
 
 const API_BASE = '/api';
 
@@ -23,14 +25,59 @@ class ApiError extends Error {
   }
 }
 
+// ============================================
+// Token Refresh Mutex
+// ============================================
+
+let refreshPromise: Promise<void> | null = null;
+
+async function handleTokenRefresh(): Promise<void> {
+  if (!refreshPromise) {
+    refreshPromise = useAuthStore.getState().refreshToken().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
     },
   });
+
+  // On 401, attempt token refresh and retry once
+  if (response.status === 401) {
+    try {
+      await handleTokenRefresh();
+
+      // Retry the original request
+      const retryResponse = await fetch(url, {
+        ...options,
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...options?.headers,
+        },
+      });
+
+      if (!retryResponse.ok) {
+        const error = await retryResponse.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new ApiError(retryResponse.status, error.detail || 'Request failed');
+      }
+
+      return retryResponse.json();
+    } catch {
+      // Refresh failed — redirect to login
+      useAuthStore.getState().logout();
+      window.location.href = '/login';
+      throw new ApiError(401, 'Session expired');
+    }
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
@@ -44,16 +91,18 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
 // Chat API
 // ============================================
 
-export async function sendMessage(request: ChatRequest): Promise<Response> {
+export async function sendMessage(request: ChatRequest, signal?: AbortSignal): Promise<Response> {
   return fetch(`${API_BASE}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify(request),
+    signal,
   });
 }
 
-export async function* streamChat(request: ChatRequest): AsyncGenerator<StreamChunk> {
-  const response = await sendMessage(request);
+export async function* streamChat(request: ChatRequest, signal?: AbortSignal): AsyncGenerator<StreamChunk> {
+  const response = await sendMessage(request, signal);
   
   if (!response.ok) {
     throw new ApiError(response.status, 'Failed to start chat stream');
@@ -124,6 +173,49 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
   return fetchJson(`${API_BASE}/conversations/${conversationId}/messages`);
 }
 
+export async function exportConversation(id: string, format: string): Promise<void> {
+  const response = await fetch(`${API_BASE}/conversations/${id}/export?format=${format}`, {
+    credentials: 'include',
+  });
+
+  if (response.status === 401) {
+    try {
+      await handleTokenRefresh();
+      const retryResponse = await fetch(`${API_BASE}/conversations/${id}/export?format=${format}`, {
+        credentials: 'include',
+      });
+      if (!retryResponse.ok) {
+        throw new ApiError(retryResponse.status, 'Export failed');
+      }
+      await triggerDownload(retryResponse, format);
+      return;
+    } catch {
+      useAuthStore.getState().logout();
+      window.location.href = '/login';
+      throw new ApiError(401, 'Session expired');
+    }
+  }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Export failed' }));
+    throw new ApiError(response.status, error.detail || 'Export failed');
+  }
+
+  await triggerDownload(response, format);
+}
+
+async function triggerDownload(response: globalThis.Response, format: string): Promise<void> {
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const disposition = response.headers.get('Content-Disposition');
+  a.download = disposition?.split('filename=')[1]?.replace(/"/g, '') ||
+    `conversation.${format === 'markdown' ? 'md' : format === 'text' ? 'txt' : format}`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // ============================================
 // Documents API
 // ============================================
@@ -142,6 +234,7 @@ export async function uploadDocument(file: File): Promise<{ id: string; filename
 
   const response = await fetch(`${API_BASE}/documents/upload`, {
     method: 'POST',
+    credentials: 'include',
     body: formData,
   });
 
@@ -200,6 +293,13 @@ export async function getSettings(): Promise<Settings> {
   return fetchJson(`${API_BASE}/system/settings`);
 }
 
+export async function updateSettings(updates: SettingsUpdate): Promise<Settings> {
+  return fetchJson(`${API_BASE}/system/settings`, {
+    method: 'PATCH',
+    body: JSON.stringify(updates),
+  });
+}
+
 // ============================================
 // Model Management API
 // ============================================
@@ -213,6 +313,52 @@ export async function pullModel(modelName: string): Promise<{ success: boolean; 
     method: 'POST',
     body: JSON.stringify({ model_name: modelName }),
   });
+}
+
+export async function pullModelStream(
+  modelName: string,
+  onProgress: (data: { status: string; percent?: number; completed?: number; total?: number }) => void
+): Promise<boolean> {
+  const response = await fetch(`${API_BASE}/system/models/pull/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ model_name: modelName }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to start model download');
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body');
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let success = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          onProgress(data);
+          if (data.status === 'success') success = true;
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  }
+
+  return success;
 }
 
 export async function switchModel(modelName: string): Promise<{ success: boolean; message: string; active_model: string }> {

@@ -2,12 +2,16 @@
 Galentix AI - LLM Service Factory
 Automatically selects the appropriate LLM backend based on hardware.
 """
+import asyncio
 from typing import Optional
 from .base import BaseLLMService
 from .ollama import OllamaService
 from .vllm import VLLMService
 from ..hardware import hardware_detector
 from ...config import settings
+
+# Limit concurrent LLM requests to prevent OOM on resource-constrained hardware
+_llm_semaphore = asyncio.Semaphore(3)
 
 
 class LLMService:
@@ -31,13 +35,16 @@ class LLMService:
         
         # Create appropriate service
         if engine == "vllm":
-            self._service = VLLMService(
+            vllm_service = VLLMService(
                 model=model,
                 base_url=settings.vllm_url
             )
             # Check if vLLM is available, fallback to Ollama if not
-            if not await self._service.health_check():
+            if await vllm_service.health_check():
+                self._service = vllm_service
+            else:
                 print("vLLM not available, falling back to Ollama")
+                await vllm_service.close()
                 self._service = OllamaService(
                     model=self._get_ollama_model_name(model),
                     base_url=settings.ollama_url
@@ -78,15 +85,17 @@ class LLMService:
         return self.service.model
     
     async def generate(self, messages, **kwargs):
-        """Generate a response."""
+        """Generate a response, limited by concurrency semaphore."""
         await self.initialize()
-        return await self.service.generate(messages, **kwargs)
-    
+        async with _llm_semaphore:
+            return await self.service.generate(messages, **kwargs)
+
     async def generate_stream(self, messages, **kwargs):
-        """Generate a streaming response."""
+        """Generate a streaming response, limited by concurrency semaphore."""
         await self.initialize()
-        async for chunk in self.service.generate_stream(messages, **kwargs):
-            yield chunk
+        async with _llm_semaphore:
+            async for chunk in self.service.generate_stream(messages, **kwargs):
+                yield chunk
     
     async def get_embeddings(self, text: str):
         """Get embeddings for text."""
@@ -117,6 +126,11 @@ class LLMService:
             "base_url": self.service.base_url
         }
 
+    async def close(self):
+        """Close the underlying LLM service's HTTP client."""
+        if self._service and hasattr(self._service, 'close'):
+            await self._service.close()
+
     async def switch_model(self, model_name: str) -> bool:
         """Hot-swap to a different model. Next request uses the new model."""
         from ...config import settings, save_settings
@@ -125,6 +139,9 @@ class LLMService:
         settings.llm_model = model_name
         if model_name not in settings.llm_models:
             settings.llm_models.append(model_name)
+
+        # Close old service's HTTP client before replacing
+        await self.close()
 
         # Reset service so it re-initializes with new model
         self._service = None

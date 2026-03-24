@@ -2,7 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom scrollbar */
+:root {
+  --color-galentix: #6BBF9E;
+}
+
+/* Custom scrollbar - light mode */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -13,14 +17,15 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: #d1d5db;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+  background: #9ca3af;
 }
 
+/* Custom scrollbar - dark mode */
 .dark ::-webkit-scrollbar-thumb {
   background: #4b5563;
 }
@@ -41,14 +46,11 @@ html {
 
 /* Markdown content styling */
 .prose pre {
-  background-color: #1e293b;
-  border-radius: 0.5rem;
-  padding: 1rem;
-  overflow-x: auto;
+  @apply bg-slate-800 rounded-lg p-4 overflow-x-auto;
 }
 
 .prose code {
-  background-color: rgba(107, 191, 158, 0.2);
+  background-color: color-mix(in srgb, var(--color-galentix) 20%, transparent);
   padding: 0.125rem 0.25rem;
   border-radius: 0.25rem;
   font-size: 0.875em;
@@ -68,25 +70,13 @@ html {
 .cursor-blink::after {
   content: '|';
   animation: blink 1s infinite;
-  color: #6BBF9E;
-}
-
-/* Message animations */
-.message-enter {
-  opacity: 0;
-  transform: translateY(10px);
-}
-
-.message-enter-active {
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity 200ms ease-out, transform 200ms ease-out;
+  color: var(--color-galentix);
 }
 
 /* Typing indicator */
 .typing-indicator span {
   animation: typing 1.4s infinite;
-  background-color: #6BBF9E;
+  background-color: var(--color-galentix);
   border-radius: 50%;
   display: inline-block;
   height: 8px;
@@ -119,4 +109,16 @@ html {
 
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+/* Arabic / RTL typography support */
+[dir="rtl"] {
+  font-feature-settings: "liga" 1;
+  letter-spacing: 0;
+  font-size: calc(1em + 0.5px);
+  line-height: 1.7;
+}
+
+[dir="rtl"] .prose {
+  text-align: right;
 }
