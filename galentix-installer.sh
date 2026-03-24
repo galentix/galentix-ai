@@ -736,10 +736,11 @@ sudo -u galentix /opt/galentix/.venv/bin/pip install \
     aiohttp==3.9.3 \
     2>&1 | tail -1
 
-log_info "  [7/7] Installing utilities..."
+log_info "  [7/7] Installing utilities and security packages..."
 sudo -u galentix /opt/galentix/.venv/bin/pip install \
     python-jose[cryptography]==3.3.0 \
     passlib[bcrypt]==1.7.4 \
+    slowapi==0.1.9 \
     tiktoken==0.5.2 \
     psutil==5.9.7 \
     aiofiles==23.2.1 \
