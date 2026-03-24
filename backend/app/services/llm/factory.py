@@ -98,6 +98,13 @@ class LLMService:
         await self.initialize()
         return await self.service.health_check()
     
+    async def list_models(self) -> list:
+        """List available models."""
+        await self.initialize()
+        if hasattr(self.service, 'list_models'):
+            return await self.service.list_models()
+        return []
+
     async def get_status(self) -> dict:
         """Get detailed status information."""
         await self.initialize()
@@ -109,6 +116,26 @@ class LLMService:
             "status": "online" if is_healthy else "offline",
             "base_url": self.service.base_url
         }
+
+    async def switch_model(self, model_name: str) -> bool:
+        """Hot-swap to a different model. Next request uses the new model."""
+        from ...config import settings, save_settings
+
+        # Update settings
+        settings.llm_model = model_name
+        if model_name not in settings.llm_models:
+            settings.llm_models.append(model_name)
+
+        # Reset service so it re-initializes with new model
+        self._service = None
+        self._initialized = False
+
+        # Persist to config file
+        save_settings(settings)
+
+        # Re-initialize with new model
+        await self.initialize()
+        return await self.health_check()
 
 
 # Global LLM service instance

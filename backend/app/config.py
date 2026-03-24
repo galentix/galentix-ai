@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # LLM Settings
     llm_engine: str = "ollama"  # "ollama" or "vllm"
     llm_model: str = "tinyllama"
+    llm_models: list[str] = []  # List of all downloaded model names
     ollama_url: str = "http://127.0.0.1:11434"
     vllm_url: str = "http://127.0.0.1:8000"
     llm_temperature: float = 0.7
@@ -77,7 +78,8 @@ def load_settings() -> Settings:
                 settings.vllm_url = llm.get('vllm_url', settings.vllm_url)
                 settings.llm_temperature = llm.get('temperature', settings.llm_temperature)
                 settings.llm_max_tokens = llm.get('max_tokens', settings.llm_max_tokens)
-            
+                settings.llm_models = llm.get('models', [settings.llm_model])
+
             if 'rag' in config_data:
                 rag = config_data['rag']
                 settings.rag_enabled = rag.get('enabled', settings.rag_enabled)
@@ -110,6 +112,45 @@ def load_settings() -> Settings:
     settings.database_url = f"sqlite+aiosqlite:///{db_path}"
     
     return settings
+
+
+def save_settings(current_settings: Settings) -> None:
+    """Save current settings to config file."""
+    config_file = current_settings.config_dir / "settings.json"
+    config_data = {
+        "llm": {
+            "engine": current_settings.llm_engine,
+            "model": current_settings.llm_model,
+            "models": current_settings.llm_models,
+            "ollama_url": current_settings.ollama_url,
+            "vllm_url": current_settings.vllm_url,
+            "temperature": current_settings.llm_temperature,
+            "max_tokens": current_settings.llm_max_tokens
+        },
+        "rag": {
+            "enabled": current_settings.rag_enabled,
+            "chunk_size": current_settings.rag_chunk_size,
+            "chunk_overlap": current_settings.rag_chunk_overlap,
+            "top_k": current_settings.rag_top_k,
+            "embedding_model": current_settings.embedding_model
+        },
+        "search": {
+            "enabled": current_settings.search_enabled,
+            "searxng_url": current_settings.searxng_url,
+            "max_results": current_settings.search_max_results
+        },
+        "ui": {
+            "brand_name": current_settings.brand_name,
+            "brand_color": current_settings.brand_color,
+            "theme": current_settings.ui_theme
+        }
+    }
+    try:
+        config_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(config_file, 'w') as f:
+            json.dump(config_data, f, indent=4)
+    except Exception as e:
+        print(f"Warning: Could not save config file: {e}")
 
 
 def load_device_info() -> dict:

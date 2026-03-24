@@ -186,3 +186,37 @@ class SettingsUpdate(BaseModel):
     rag: Optional[dict] = None
     search: Optional[dict] = None
     ui: Optional[dict] = None
+
+
+# ============================================
+# Model Management Schemas
+# ============================================
+
+class ModelInfo(BaseModel):
+    """Information about a downloaded model."""
+    name: str
+    size: str = ""
+    is_active: bool = False
+
+
+class ModelListResponse(BaseModel):
+    """List of available models."""
+    models: List[ModelInfo]
+    active_model: str
+
+
+class ModelPullRequest(BaseModel):
+    """Request to download a new model."""
+    model_name: str = Field(..., description="Ollama model ID (e.g. llama3:8b)")
+
+
+class ModelPullResponse(BaseModel):
+    """Response after model pull."""
+    success: bool
+    message: str
+    model_name: str
+
+
+class ModelSwitchRequest(BaseModel):
+    """Request to switch active model."""
+    model_name: str = Field(..., description="Model to switch to")

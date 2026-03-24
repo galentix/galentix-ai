@@ -117,6 +117,17 @@ export interface ChatRequest {
   stream?: boolean;
 }
 
+export interface ModelInfo {
+  name: string;
+  size: string;
+  is_active: boolean;
+}
+
+export interface ModelListResponse {
+  models: ModelInfo[];
+  active_model: string;
+}
+
 export interface StreamChunk {
   type: 'meta' | 'token' | 'done' | 'error';
   content?: string;

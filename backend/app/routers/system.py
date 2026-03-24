@@ -17,12 +17,17 @@ from ..models.schemas import (
     DeviceInfoResponse,
     SystemStatsResponse,
     SettingsResponse,
-    SettingsUpdate
+    SettingsUpdate,
+    ModelInfo,
+    ModelListResponse,
+    ModelPullRequest,
+    ModelPullResponse,
+    ModelSwitchRequest
 )
 from ..services.llm import get_llm_service
 from ..services.rag import get_rag_pipeline
 from ..services.websearch import get_search_service
-from ..config import settings, load_device_info
+from ..config import settings, load_device_info, save_settings
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -203,3 +208,127 @@ async def rag_stats():
             "status": "error",
             "error": str(e)
         }
+
+
+@router.get("/models", response_model=ModelListResponse)
+async def list_models():
+    """List all downloaded models with active model marked."""
+    llm = get_llm_service()
+
+    try:
+        # Get models from Ollama via the LLM service
+        model_names = await llm.list_models()
+
+        # Normalize active model name for comparison (handle :latest suffix)
+        active = settings.llm_model
+        active_base = active.split(":")[0] if ":" in active else active
+
+        models = []
+        for name in model_names:
+            name_base = name.split(":")[0] if ":" in name else name
+            is_active = (name == active) or (name_base == active_base and (
+                name.endswith(":latest") or active.endswith(":latest") or ":" not in active or ":" not in name
+            ))
+            models.append(ModelInfo(
+                name=name,
+                is_active=is_active
+            ))
+
+        return ModelListResponse(
+            models=models,
+            active_model=settings.llm_model
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
+
+
+@router.post("/models/pull", response_model=ModelPullResponse)
+async def pull_model(request: ModelPullRequest):
+    """Download a new model from Ollama registry."""
+    from ..services.llm.ollama import OllamaService
+
+    ollama = OllamaService(base_url=settings.ollama_url)
+
+    try:
+        success = await ollama.pull_model(request.model_name)
+
+        if success:
+            # Add to tracked models list
+            if request.model_name not in settings.llm_models:
+                settings.llm_models.append(request.model_name)
+                save_settings(settings)
+
+            return ModelPullResponse(
+                success=True,
+                message=f"Model {request.model_name} downloaded successfully",
+                model_name=request.model_name
+            )
+        else:
+            return ModelPullResponse(
+                success=False,
+                message=f"Failed to download model {request.model_name}",
+                model_name=request.model_name
+            )
+    except Exception as e:
+        return ModelPullResponse(
+            success=False,
+            message=f"Error downloading model: {str(e)}",
+            model_name=request.model_name
+        )
+
+
+@router.post("/models/switch")
+async def switch_model(request: ModelSwitchRequest):
+    """Switch the active LLM model (hot-swap, no restart needed)."""
+    llm = get_llm_service()
+
+    try:
+        success = await llm.switch_model(request.model_name)
+
+        if success:
+            return {
+                "success": True,
+                "message": f"Switched to model {request.model_name}",
+                "active_model": request.model_name
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Model {request.model_name} switched but health check failed. It may still work.",
+                "active_model": request.model_name
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to switch model: {str(e)}")
+
+
+@router.delete("/models/{model_name:path}")
+async def delete_model(model_name: str):
+    """Delete a downloaded model."""
+    # Don't allow deleting the active model
+    if model_name == settings.llm_model:
+        raise HTTPException(status_code=400, detail="Cannot delete the active model. Switch to a different model first.")
+
+    from ..services.llm.ollama import OllamaService
+
+    ollama = OllamaService(base_url=settings.ollama_url)
+
+    try:
+        success = await ollama.delete_model(model_name)
+
+        if success:
+            # Remove from tracked models list
+            if model_name in settings.llm_models:
+                settings.llm_models.remove(model_name)
+                save_settings(settings)
+
+            return {
+                "success": True,
+                "message": f"Model {model_name} deleted successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "message": f"Failed to delete model {model_name}"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
