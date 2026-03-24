@@ -290,7 +290,7 @@ log_success "System updated"
 # Install base packages
 log_step "[2/12] Installing base packages..."
 PACKAGES=(
-    curl wget git htop unzip
+    curl wget git htop unzip zstd
     ca-certificates gnupg lsb-release
     ufw fail2ban
     python3 python3-venv python3-pip python3-dev
