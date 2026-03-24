@@ -7,6 +7,9 @@
   },
   "chat": {
     "askAnything": "Ask anything...",
+    "placeholder": "Ask anything...",
+    "helperText": "Press Enter to send, Shift+Enter for new line",
+    "webSearchPrivacyNote": "Your query will be sent to the internet via a privacy-focused search engine.",
     "send": "Send message",
     "stop": "Stop generating",
     "useDocuments": "Use Documents",
@@ -166,7 +169,19 @@
       "digit": "Digit"
     },
     "setupFailed": "Setup failed",
-    "failedCreateAdmin": "Failed to create admin account"
+    "failedCreateAdmin": "Failed to create admin account",
+    "createAdmin": "Create Admin Account",
+    "passwordWeak": "Weak",
+    "passwordMedium": "Medium",
+    "passwordStrong": "Strong",
+    "policyMinLength": "Min 8 characters",
+    "policyUppercase": "Uppercase letter",
+    "policyLowercase": "Lowercase letter",
+    "policyDigit": "Digit",
+    "confirmYourPassword": "Confirm your password",
+    "passwordsMismatch": "Passwords do not match",
+    "enterUsername": "Enter your username",
+    "enterPassword": "Enter your password"
   },
   "common": {
     "loading": "Loading...",
@@ -178,6 +193,8 @@
     "close": "Close",
     "localPrivacy": "100% Local - Your data stays on this device",
     "localPrivacyShort": "100% Local - Your data stays on device",
+    "optional": "optional",
+    "localAssistant": "Local AI Assistant",
     "galentixAI": "Galentix AI",
     "localAIAssistant": "Local AI Assistant",
     "skipToMainContent": "Skip to main content"
@@ -207,7 +224,10 @@
     "tipWebSearch": "Enable Web Search for current information",
     "tipPrivacy": "All data stays on this device",
     "showWelcomeScreen": "Show welcome screen",
-    "closeSources": "Close sources panel"
+    "closeSources": "Close sources panel",
+    "privacyFooter": "100% Local - Your data stays on this device",
+    "privacyNote": "All data stays on this device",
+    "modelLoading": "AI model is loading... Chat will be available shortly."
   },
   "sources": {
     "title": "Sources",
@@ -289,5 +309,11 @@
     "title": "404",
     "message": "Page Not Found",
     "backToChat": "Back to Chat"
+  },
+  "help": {
+    "tipsTitle": "Tips & Features",
+    "tipDocuments": "Upload documents for AI-powered search",
+    "tipWebSearch": "Enable Web Search for current information",
+    "showWelcome": "Show welcome screen"
   }
 }
