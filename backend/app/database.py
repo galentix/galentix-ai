@@ -3,7 +3,7 @@ Galentix AI - Database Configuration
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import event as sa_event
+from sqlalchemy import event as sa_event, text as sa_text
 from .config import settings
 
 # Create async engine
@@ -34,7 +34,7 @@ Base = declarative_base()
 
 
 async def init_db():
-    """Initialize database tables."""
+    """Initialize database tables and run migrations."""
     # Import all models so their tables are registered with Base.metadata
     from app.models.user import User  # noqa: F401
     from app.models.conversation import Conversation, Message  # noqa: F401
@@ -43,6 +43,29 @@ async def init_db():
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Run lightweight migrations for columns added after initial schema
+        await _run_migrations(conn)
+
+
+async def _run_migrations(conn):
+    """Add missing columns to existing tables (safe to run multiple times)."""
+    import logging
+    logger = logging.getLogger(__name__)
+
+    migrations = [
+        ("conversations", "user_id", "ALTER TABLE conversations ADD COLUMN user_id VARCHAR REFERENCES users(id)"),
+    ]
+
+    for table, column, sql in migrations:
+        try:
+            # Check if column exists
+            result = await conn.execute(sa_text(f"PRAGMA table_info({table})"))
+            columns = [row[1] for row in result.fetchall()]
+            if column not in columns:
+                await conn.execute(sa_text(sql))
+                logger.info("Migration: added %s.%s", table, column)
+        except Exception as e:
+            logger.warning("Migration skipped (%s.%s): %s", table, column, e)
 
 
 async def get_db() -> AsyncSession:
