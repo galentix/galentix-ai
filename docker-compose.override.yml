@@ -11,7 +11,7 @@ services:
       - LOG_LEVEL=debug
     volumes:
       - ./backend:/app/backend
-      - galentix-data-dev:/data
+      - galentix-data:/data
     command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 
   searxng:
@@ -21,3 +21,7 @@ services:
   ollama:
     environment:
       - OLLAMA_DEBUG=1
+
+volumes:
+  galentix-data:
+    driver: local
