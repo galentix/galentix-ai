@@ -207,7 +207,16 @@
     "webSearch": "Web Search",
     "webSearchDesc": "Search the web for current information",
     "privacy": "100% Private",
-    "privacyDesc": "Your data never leaves this device"
+    "privacyDesc": "Your data never leaves this device",
+    "feature1Title": "Document Q&A",
+    "feature1Desc": "Upload documents and ask questions about them",
+    "feature2Title": "Web Search",
+    "feature2Desc": "Search the web for current information",
+    "feature3Title": "100% Private",
+    "feature3Desc": "Your data never leaves this device",
+    "starter1": "Summarize my uploaded documents",
+    "starter2": "What can you help me with?",
+    "starter3": "Search the web for latest news about..."
   },
   "system": {
     "llm": "LLM",
@@ -243,8 +252,8 @@
     "residency": {
       "localData": "All data stored locally on device",
       "noCloud": "No cloud dependencies",
-      "dbLocation": "Database location: /opt/galentix/data/",
-      "vectorLocation": "Vector store location: /opt/galentix/data/chroma/",
+      "dbLocation": "Database location: {{dbPath}}",
+      "vectorLocation": "Vector store location: {{vectorPath}}",
       "webSearchWarning": "Web search queries leave the device via SearXNG"
     },
     "pdplChecklist": "PDPL Compliance Checklist",

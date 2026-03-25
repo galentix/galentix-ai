@@ -12,15 +12,19 @@ import {
   FileText,
   MessageSquare,
   Users,
-  ExternalLink,
+  X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import Card from '../components/ui/Card';
 import { useAuthStore } from '../stores/authStore';
 import * as api from '../services/api';
 import type { SystemStats } from '../types';
+import type { AuditLogEntry } from '../services/api';
 
 export default function CompliancePage() {
+  useEffect(() => { document.title = "Compliance - Galentix AI"; }, []);
   const { t } = useTranslation();
   const authUser = useAuthStore((s) => s.user);
   const isAdmin = authUser?.role === 'admin';
@@ -28,6 +32,7 @@ export default function CompliancePage() {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [dataPaths, setDataPaths] = useState({ data_dir: '', chroma_dir: '' });
   const [retentionDays, setRetentionDays] = useState<number>(0);
   const [isSavingRetention, setIsSavingRetention] = useState(false);
   const [isPurging, setIsPurging] = useState(false);
@@ -37,16 +42,26 @@ export default function CompliancePage() {
     type: 'success' | 'error';
   } | null>(null);
 
+  // Audit logs state
+  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([]);
+  const [auditLogsOpen, setAuditLogsOpen] = useState(false);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
+  const [auditLogsPage, setAuditLogsPage] = useState(0);
+  const AUDIT_PAGE_SIZE = 20;
+
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [statsData, , searchStatus] = await Promise.all([
+        const [statsData, settingsData, searchStatus] = await Promise.all([
           api.getSystemStats(),
           api.getSettings(),
           api.getSearchStatus(),
         ]);
         setStats(statsData);
         setWebSearchEnabled(searchStatus.enabled);
+        if (settingsData.paths) {
+          setDataPaths(settingsData.paths);
+        }
       } catch (err) {
         console.error('Failed to load compliance data:', err);
       } finally {
@@ -181,13 +196,13 @@ export default function CompliancePage() {
             <div className="flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
               <span className="text-sm">
-                {t('compliance.residency.dbLocation')}
+                {t('compliance.residency.dbLocation', { dbPath: dataPaths.data_dir || '...' })}
               </span>
             </div>
             <div className="flex items-center gap-3">
               <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
               <span className="text-sm">
-                {t('compliance.residency.vectorLocation')}
+                {t('compliance.residency.vectorLocation', { vectorPath: dataPaths.chroma_dir || '...' })}
               </span>
             </div>
 
@@ -307,15 +322,24 @@ export default function CompliancePage() {
                   {t('compliance.checklist.auditTrailDesc')}
                 </p>
                 {isAdmin && (
-                  <a
-                    href="/api/system/audit-logs"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={async () => {
+                      setAuditLogsOpen(true);
+                      setAuditLogsLoading(true);
+                      setAuditLogsPage(0);
+                      try {
+                        const logs = await api.fetchAuditLogs(0, AUDIT_PAGE_SIZE);
+                        setAuditLogs(logs);
+                      } catch {
+                        setAuditLogs([]);
+                      } finally {
+                        setAuditLogsLoading(false);
+                      }
+                    }}
                     className="inline-flex items-center gap-1 text-xs text-galentix-500 hover:text-galentix-600 mt-1"
                   >
                     {t('compliance.checklist.viewAuditLogs')}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                  </button>
                 )}
               </div>
             </div>
@@ -385,11 +409,12 @@ export default function CompliancePage() {
                 <div className="flex items-center gap-3">
                   <input
                     type="number"
-                    min="0"
+                    min={0}
+                    max={3650}
                     value={retentionDays}
                     onChange={(e) =>
                       setRetentionDays(
-                        Math.max(0, parseInt(e.target.value) || 0)
+                        Math.max(0, Math.min(3650, parseInt(e.target.value) || 0))
                       )
                     }
                     className="w-32 px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-galentix-500"
@@ -398,8 +423,8 @@ export default function CompliancePage() {
                     {t('compliance.retention.days')}
                   </span>
                 </div>
-                <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-                  {t('compliance.retention.disableNote')}
+                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                  Set to 0 to disable auto-deletion
                 </p>
               </div>
               <button
@@ -420,6 +445,107 @@ export default function CompliancePage() {
           </Card>
         )}
       </div>
+
+      {/* Audit Logs Modal */}
+      {auditLogsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+            onClick={() => setAuditLogsOpen(false)}
+            aria-hidden="true"
+          />
+          <div className="relative z-10 w-full max-w-3xl mx-4 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-xl p-6 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Audit Logs</h2>
+              <button
+                onClick={() => setAuditLogsOpen(false)}
+                aria-label="Close audit logs"
+                className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {auditLogsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <RefreshCw className="w-6 h-6 animate-spin text-gray-400" />
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">No audit logs found.</p>
+            ) : (
+              <div className="overflow-auto flex-1">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-slate-700">
+                      <th className="text-start py-2 px-3 font-medium text-gray-600 dark:text-gray-300">Timestamp</th>
+                      <th className="text-start py-2 px-3 font-medium text-gray-600 dark:text-gray-300">User</th>
+                      <th className="text-start py-2 px-3 font-medium text-gray-600 dark:text-gray-300">Action</th>
+                      <th className="text-start py-2 px-3 font-medium text-gray-600 dark:text-gray-300">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log) => (
+                      <tr key={log.id} className="border-b border-gray-100 dark:border-slate-700/50">
+                        <td className="py-2 px-3 text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                          {new Date(log.timestamp).toLocaleString()}
+                        </td>
+                        <td className="py-2 px-3">{log.user}</td>
+                        <td className="py-2 px-3">{log.action}</td>
+                        <td className="py-2 px-3 text-gray-500 dark:text-gray-400 truncate max-w-xs" title={log.details}>
+                          {log.details}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-200 dark:border-slate-700">
+              <button
+                onClick={async () => {
+                  const newPage = Math.max(0, auditLogsPage - 1);
+                  setAuditLogsPage(newPage);
+                  setAuditLogsLoading(true);
+                  try {
+                    const logs = await api.fetchAuditLogs(newPage * AUDIT_PAGE_SIZE, AUDIT_PAGE_SIZE);
+                    setAuditLogs(logs);
+                  } catch {
+                    setAuditLogs([]);
+                  } finally {
+                    setAuditLogsLoading(false);
+                  }
+                }}
+                disabled={auditLogsPage === 0 || auditLogsLoading}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="w-4 h-4" /> Previous
+              </button>
+              <span className="text-sm text-gray-500 dark:text-gray-400">Page {auditLogsPage + 1}</span>
+              <button
+                onClick={async () => {
+                  const newPage = auditLogsPage + 1;
+                  setAuditLogsPage(newPage);
+                  setAuditLogsLoading(true);
+                  try {
+                    const logs = await api.fetchAuditLogs(newPage * AUDIT_PAGE_SIZE, AUDIT_PAGE_SIZE);
+                    setAuditLogs(logs);
+                  } catch {
+                    setAuditLogs([]);
+                  } finally {
+                    setAuditLogsLoading(false);
+                  }
+                }}
+                disabled={auditLogs.length < AUDIT_PAGE_SIZE || auditLogsLoading}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Next <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

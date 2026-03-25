@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../../stores/chatStore';
 import PromptTemplates from './PromptTemplates';
 
-export default function ChatInput() {
+export default function ChatInput({ disabled }: { disabled?: boolean }) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -63,7 +63,7 @@ export default function ChatInput() {
   );
 
   return (
-    <div className="p-4 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+    <div className={`p-4 border-t border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}>
       {/* Options */}
       <div className="flex items-center gap-4 mb-3">
         <label className="flex items-center gap-2 cursor-pointer" title="Search your uploaded documents for relevant context">
@@ -73,7 +73,7 @@ export default function ChatInput() {
             onChange={(e) => setUseRag(e.target.checked)}
             className="w-4 h-4 rounded border-gray-300 text-galentix-500 focus:ring-galentix-500"
           />
-          <FileText className="w-4 h-4 text-gray-400" />
+          <FileText className="w-4 h-4 text-gray-500" />
           <span className="text-sm text-gray-600 dark:text-gray-300">{t('chat.useDocuments')}</span>
         </label>
 
@@ -84,7 +84,7 @@ export default function ChatInput() {
             onChange={(e) => setUseWebSearch(e.target.checked)}
             className="w-4 h-4 rounded border-gray-300 text-galentix-500 focus:ring-galentix-500"
           />
-          <Search className="w-4 h-4 text-gray-400" />
+          <Search className="w-4 h-4 text-gray-500" />
           <span className="text-sm text-gray-600 dark:text-gray-300">{t('chat.webSearch')}</span>
         </label>
 
@@ -101,7 +101,7 @@ export default function ChatInput() {
 
       {/* Web Search privacy note */}
       {useWebSearch && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 mb-2 ms-1">
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 ms-1">
           {t('chat.webSearchPrivacyNote')}
         </p>
       )}
@@ -115,7 +115,7 @@ export default function ChatInput() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t('chat.placeholder')}
-            disabled={isStreaming}
+            disabled={isStreaming || disabled}
             rows={1}
             className="w-full px-4 py-3 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50 dark:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-galentix-500 focus:border-transparent resize-none disabled:opacity-50 disabled:cursor-not-allowed"
           />
@@ -134,7 +134,7 @@ export default function ChatInput() {
         ) : (
           <button
             type="submit"
-            disabled={!input.trim()}
+            disabled={!input.trim() || disabled}
             aria-label={t('chat.send')}
             className="p-3 rounded-xl bg-galentix-500 text-white hover:bg-galentix-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
@@ -144,7 +144,7 @@ export default function ChatInput() {
       </form>
 
       {/* Helper text */}
-      <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
+      <p className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-center">
         {t('chat.helperText')}
       </p>
 

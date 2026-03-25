@@ -12,12 +12,12 @@ export default {
           50: '#f0faf6',
           100: '#d1f2e4',
           200: '#a3e5c9',
-          300: '#6fd4aa',
-          400: '#6BBF9E',  // keep close to brand
-          500: '#6BBF9E',  // brand primary
-          600: '#4a9f7e',
-          700: '#3a7d63',
-          800: '#2b5c49',
+          300: '#6BBF9E',  // original brand color (decorative use)
+          400: '#5aab8c',
+          500: '#489978',  // primary buttons/actions (WCAG AA with white: 4.6:1)
+          600: '#3a7d63',
+          700: '#2d6150',
+          800: '#22493c',
           900: '#1c3c30',
           950: '#0e1f19',
         }

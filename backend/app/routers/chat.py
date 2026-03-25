@@ -174,15 +174,15 @@ async def generate_response_stream(
 @router.post("/stream")
 @limiter.limit("10/minute")
 async def chat_stream(
-    request: ChatRequest,
-    http_request: Request,
+    chat_request: ChatRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Stream chat response with SSE."""
 
     # Get or create conversation
-    conversation_id = request.conversation_id
+    conversation_id = chat_request.conversation_id
 
     if not conversation_id:
         # Create new conversation
@@ -204,13 +204,13 @@ async def chat_stream(
         )
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Conversation not found")
-    
+
     return StreamingResponse(
         generate_response_stream(
-            message=request.message,
+            message=chat_request.message,
             conversation_id=conversation_id,
-            use_rag=request.use_rag,
-            use_web_search=request.use_web_search,
+            use_rag=chat_request.use_rag,
+            use_web_search=chat_request.use_web_search,
             db=db
         ),
         media_type="text/event-stream",
@@ -225,8 +225,8 @@ async def chat_stream(
 @router.post("/", response_model=ChatResponse)
 @limiter.limit("10/minute")
 async def chat(
-    request: ChatRequest,
-    http_request: Request,
+    chat_request: ChatRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -236,7 +236,7 @@ async def chat(
     search = get_search_service()
 
     # Get or create conversation
-    conversation_id = request.conversation_id
+    conversation_id = chat_request.conversation_id
 
     if not conversation_id:
         conversation = Conversation(
@@ -247,16 +247,16 @@ async def chat(
         db.add(conversation)
         await db.commit()
         conversation_id = conversation.id
-    
+
     # Build context
     context_parts = []
     sources = []
     web_results = []
-    
+
     # RAG context
-    if request.use_rag and settings.rag_enabled:
+    if chat_request.use_rag and settings.rag_enabled:
         try:
-            rag_context, rag_results = await rag.build_context(request.message, top_k=settings.rag_top_k)
+            rag_context, rag_results = await rag.build_context(chat_request.message, top_k=settings.rag_top_k)
             if rag_context:
                 context_parts.append(f"## Relevant Documents:\n{rag_context}")
                 for r in rag_results:
@@ -268,22 +268,22 @@ async def chat(
                     })
         except Exception:
             pass
-    
+
     # Web search context
-    if request.use_web_search and settings.search_enabled:
+    if chat_request.use_web_search and settings.search_enabled:
         try:
-            search_data = await search.search_and_summarize(request.message, max_results=5)
+            search_data = await search.search_and_summarize(chat_request.message, max_results=5)
             if search_data["results"]:
                 context_parts.append(f"## Web Search Results:\n{search_data['context']}")
                 web_results = search_data["results"]
         except Exception:
             pass
-    
+
     # Build prompt
     full_system_prompt = SYSTEM_PROMPT
     if context_parts:
         full_system_prompt += "\n\n" + "\n\n".join(context_parts)
-    
+
     # Get history
     messages = []
     try:
@@ -299,9 +299,9 @@ async def chat(
             messages.append(LLMMessage(role=msg.role, content=msg.content))
     except Exception:
         pass
-    
-    messages.append(LLMMessage(role="user", content=request.message))
-    
+
+    messages.append(LLMMessage(role="user", content=chat_request.message))
+
     # Generate response
     response = await llm.generate(
         messages=messages,
@@ -309,9 +309,9 @@ async def chat(
         temperature=settings.llm_temperature,
         max_tokens=settings.llm_max_tokens
     )
-    
+
     # Save to database
-    user_msg = Message(conversation_id=conversation_id, role="user", content=request.message)
+    user_msg = Message(conversation_id=conversation_id, role="user", content=chat_request.message)
     assistant_msg = Message(
         conversation_id=conversation_id,
         role="assistant",

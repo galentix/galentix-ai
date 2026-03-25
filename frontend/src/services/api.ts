@@ -277,8 +277,36 @@ export async function getSearchStatus(): Promise<{ enabled: boolean; available: 
 // System API
 // ============================================
 
-export async function getHealth(): Promise<HealthStatus> {
-  return fetchJson(`${API_BASE}/system/health`);
+export async function getHealth(signal?: AbortSignal): Promise<HealthStatus> {
+  try {
+    const response = await fetch(`${API_BASE}/system/health`, {
+      credentials: 'include',
+      signal,
+    });
+    if (!response.ok) {
+      // Return degraded status instead of triggering logout on 401
+      return {
+        status: 'degraded',
+        version: '',
+        llm_engine: '',
+        llm_model: '',
+        llm_status: 'offline',
+        rag_status: 'offline',
+        search_status: 'offline',
+      };
+    }
+    return response.json();
+  } catch {
+    return {
+      status: 'degraded',
+      version: '',
+      llm_engine: '',
+      llm_model: '',
+      llm_status: 'offline',
+      rag_status: 'offline',
+      search_status: 'offline',
+    };
+  }
 }
 
 export async function getDeviceInfo(): Promise<DeviceInfo> {
@@ -372,4 +400,20 @@ export async function deleteModel(modelName: string): Promise<{ success: boolean
   return fetchJson(`${API_BASE}/system/models/${encodeURIComponent(modelName)}`, {
     method: 'DELETE',
   });
+}
+
+// ============================================
+// Audit Logs API
+// ============================================
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  user: string;
+  action: string;
+  details: string;
+}
+
+export async function fetchAuditLogs(skip = 0, limit = 20): Promise<AuditLogEntry[]> {
+  return fetchJson(`${API_BASE}/system/audit-logs?skip=${skip}&limit=${limit}`);
 }

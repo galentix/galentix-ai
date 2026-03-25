@@ -80,18 +80,20 @@ async def health_check(request: Request):
     # Check LLM
     llm_status = "unknown"
     try:
-        if await llm.health_check():
-            llm_status = "online"
-        else:
-            llm_status = "offline"
+        healthy = await asyncio.wait_for(llm.health_check(), timeout=5.0)
+        llm_status = "online" if healthy else "offline"
+    except asyncio.TimeoutError:
+        llm_status = "timeout"
     except Exception:
         llm_status = "error"
 
     # Check RAG
     rag_status = "unknown"
     try:
-        rag_stats = await rag.get_stats()
-        rag_status = rag_stats.get("status", "unknown")
+        rag_stats_result = await asyncio.wait_for(rag.get_stats(), timeout=5.0)
+        rag_status = rag_stats_result.get("status", "unknown")
+    except asyncio.TimeoutError:
+        rag_status = "timeout"
     except Exception:
         rag_status = "error"
 
@@ -99,10 +101,10 @@ async def health_check(request: Request):
     search_status = "unknown"
     if settings.search_enabled:
         try:
-            if await search.health_check():
-                search_status = "online"
-            else:
-                search_status = "offline"
+            healthy = await asyncio.wait_for(search.health_check(), timeout=5.0)
+            search_status = "online" if healthy else "offline"
+        except asyncio.TimeoutError:
+            search_status = "timeout"
         except Exception:
             search_status = "error"
     else:
@@ -210,6 +212,10 @@ async def get_settings(
             "brand_name": settings.brand_name,
             "brand_color": settings.brand_color,
             "theme": settings.ui_theme
+        },
+        paths={
+            "data_dir": str(settings.data_dir),
+            "chroma_dir": str(settings.data_dir / "chroma"),
         }
     )
 
@@ -239,6 +245,10 @@ async def update_settings(
         settings.search_enabled = body.search_enabled
     if body.search_language is not None:
         settings.search_language = body.search_language
+    if body.chunk_size is not None:
+        settings.rag_chunk_size = body.chunk_size
+    if body.chunk_overlap is not None:
+        settings.rag_chunk_overlap = body.chunk_overlap
 
     save_settings(settings)
     logger.info(f"Settings updated by {current_user.username}: {list(updated_fields.keys())}")
@@ -272,6 +282,10 @@ async def update_settings(
             "brand_name": settings.brand_name,
             "brand_color": settings.brand_color,
             "theme": settings.ui_theme
+        },
+        paths={
+            "data_dir": str(settings.data_dir),
+            "chroma_dir": str(settings.data_dir / "chroma"),
         }
     )
 

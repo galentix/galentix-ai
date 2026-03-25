@@ -6,6 +6,7 @@ import { useAuthStore } from '../stores/authStore';
 import GalentixLogo from '../components/ui/GalentixLogo';
 
 export default function LoginPage() {
+  useEffect(() => { document.title = "Login - Galentix AI"; }, []);
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { login, isAuthenticated, isLoading, error, clearError } = useAuthStore();
@@ -69,7 +70,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center px-4">
+    <main className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-8">
           {/* Logo and Title */}
@@ -97,6 +98,7 @@ export default function LoginPage() {
               </label>
               <input
                 id="username"
+                name="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -114,6 +116,7 @@ export default function LoginPage() {
               </label>
               <input
                 id="password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -142,12 +145,12 @@ export default function LoginPage() {
 
           {/* Footer */}
           <div className="mt-8 text-center">
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {t('system.privacyFooter')}
             </p>
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

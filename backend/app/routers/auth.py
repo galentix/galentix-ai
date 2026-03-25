@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # Cookie settings for the local appliance (no HTTPS)
 COOKIE_KWARGS = {
     "httponly": True,
-    "samesite": "lax",
+    "samesite": "strict",
     "secure": False,
 }
 
@@ -367,6 +367,12 @@ async def update_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
+
+    if user_id == current_user.id:
+        if body.role is not None and body.role != current_user.role:
+            raise HTTPException(status_code=400, detail="Cannot change your own role")
+        if body.is_active is not None and not body.is_active:
+            raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
 
     # Prevent removing the last admin
     if user.role == "admin" and (

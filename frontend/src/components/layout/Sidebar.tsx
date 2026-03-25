@@ -16,6 +16,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useChatStore } from '../../stores/chatStore';
 import { useSettingsStore } from '../../stores/settingsStore';
+import { useAuthStore } from '../../stores/authStore';
 import { exportConversation } from '../../services/api';
 import GalentixLogo from '../ui/GalentixLogo';
 
@@ -100,9 +101,21 @@ export default function Sidebar() {
     setConfirmDeleteId(null);
   };
 
+  const { isAuthenticated } = useAuthStore();
   useEffect(() => {
-    loadConversations();
-  }, [loadConversations]);
+    if (isAuthenticated) loadConversations();
+  }, [isAuthenticated, loadConversations]);
+
+  // Auto-collapse sidebar on mobile
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 768px)');
+    const handler = (e: MediaQueryListEvent) => {
+      if (e.matches) setSidebarOpen(false);
+    };
+    mql.addEventListener('change', handler);
+    if (mql.matches) setSidebarOpen(false);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
 
   const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 768;
 
@@ -179,7 +192,7 @@ export default function Sidebar() {
           <div className="flex items-center gap-3">
             <GalentixLogo size="md" />
             <div>
-              <h1 className="font-semibold text-lg">Galentix AI</h1>
+              <span className="font-semibold text-lg">Galentix AI</span>
               <p className="text-xs text-gray-500 dark:text-gray-400">{t('common.localAssistant')}</p>
             </div>
           </div>
@@ -248,11 +261,11 @@ export default function Sidebar() {
 
             <div className="flex-1 overflow-y-auto px-2 pb-4">
               {conversations.length === 0 ? (
-                <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
                   {t('chat.noConversations')}
                 </p>
               ) : filteredConversations.length === 0 ? (
-                <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+                <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
                   {t('chat.noMatchingConversations')}
                 </p>
               ) : (
@@ -424,7 +437,7 @@ export default function Sidebar() {
 
         {/* Footer */}
         <div className="p-4 border-t border-gray-200 dark:border-slate-700">
-          <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
+          <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
             {t('system.privacyFooter')}
           </p>
         </div>

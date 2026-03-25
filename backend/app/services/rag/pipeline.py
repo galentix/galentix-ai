@@ -2,6 +2,7 @@
 Galentix AI - RAG Pipeline
 Complete pipeline for document ingestion, indexing, and retrieval.
 """
+import logging
 import os
 import uuid
 from typing import List, Optional, Dict, Any
@@ -41,14 +42,19 @@ class RAGPipeline:
         self._client = None
         self._collection = None
         self._initialized = False
+        self._init_attempted = False
     
     async def initialize(self) -> bool:
         """Initialize the vector store."""
         if self._initialized:
             return True
-        
+
+        if self._init_attempted:
+            return False
+        self._init_attempted = True
+
         if not CHROMA_AVAILABLE:
-            print("ChromaDB not available - RAG disabled")
+            logging.getLogger(__name__).warning("ChromaDB not available - RAG disabled")
             return False
         
         try:
@@ -73,7 +79,7 @@ class RAGPipeline:
             self._initialized = True
             return True
         except Exception as e:
-            print(f"Failed to initialize RAG pipeline: {e}")
+            logging.getLogger(__name__).warning(f"Failed to initialize RAG pipeline: {e}")
             return False
     
     async def add_document(
@@ -170,7 +176,7 @@ class RAGPipeline:
                 include=["documents", "metadatas", "distances"]
             )
         except Exception as e:
-            print(f"Search error: {e}")
+            logging.getLogger(__name__).warning(f"Search error: {e}")
             return []
         
         # Format results
@@ -212,7 +218,7 @@ class RAGPipeline:
             
             return True
         except Exception as e:
-            print(f"Delete error: {e}")
+            logging.getLogger(__name__).warning(f"Delete error: {e}")
             return False
     
     async def get_document_chunks(self, document_id: str) -> List[Dict[str, Any]]:
