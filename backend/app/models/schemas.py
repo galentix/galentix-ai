@@ -3,7 +3,7 @@ Galentix AI - Pydantic Schemas for API
 """
 from datetime import datetime
 from typing import Optional, List, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ============================================
@@ -178,6 +178,7 @@ class SettingsResponse(BaseModel):
     rag: dict
     search: dict
     ui: dict
+    paths: dict = {}
 
 
 class SettingsUpdate(BaseModel):
@@ -188,6 +189,8 @@ class SettingsUpdate(BaseModel):
     rag_top_k: Optional[int] = Field(None, ge=1, le=20, description="RAG top-K results")
     search_enabled: Optional[bool] = Field(None, description="Enable/disable web search")
     search_language: Optional[str] = Field(None, pattern="^(en|ar|all)$", description="Search language: en, ar, or all")
+    chunk_size: Optional[int] = Field(None, ge=100, le=2000)
+    chunk_overlap: Optional[int] = Field(None, ge=0, le=500)
 
 
 # ============================================
@@ -196,6 +199,7 @@ class SettingsUpdate(BaseModel):
 
 class ModelInfo(BaseModel):
     """Information about a downloaded model."""
+    model_config = ConfigDict(protected_namespaces=())
     name: str
     size: str = ""
     is_active: bool = False
@@ -211,11 +215,13 @@ class ModelListResponse(BaseModel):
 
 class ModelPullRequest(BaseModel):
     """Request to download a new model."""
+    model_config = ConfigDict(protected_namespaces=())
     model_name: str = Field(..., description="Ollama model ID (e.g. llama3:8b)")
 
 
 class ModelPullResponse(BaseModel):
     """Response after model pull."""
+    model_config = ConfigDict(protected_namespaces=())
     success: bool
     message: str
     model_name: str
@@ -223,6 +229,7 @@ class ModelPullResponse(BaseModel):
 
 class ModelSwitchRequest(BaseModel):
     """Request to switch active model."""
+    model_config = ConfigDict(protected_namespaces=())
     model_name: str = Field(..., description="Model to switch to")
 
 

@@ -252,8 +252,8 @@
     "residency": {
       "localData": "All data stored locally on device",
       "noCloud": "No cloud dependencies",
-      "dbLocation": "Database location: /opt/galentix/data/",
-      "vectorLocation": "Vector store location: /opt/galentix/data/chroma/",
+      "dbLocation": "Database location: {{dbPath}}",
+      "vectorLocation": "Vector store location: {{vectorPath}}",
       "webSearchWarning": "Web search queries leave the device via SearXNG"
     },
     "pdplChecklist": "PDPL Compliance Checklist",

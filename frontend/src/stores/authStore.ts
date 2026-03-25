@@ -79,11 +79,15 @@ export const useAuthStore = create<AuthState>()(
           });
           startRefreshTimer();
         } catch (err) {
+          let errorMessage = (err as Error).message;
+          if (err instanceof TypeError && err.message.includes('fetch')) {
+            errorMessage = 'Server unreachable. Please check that Galentix AI is running.';
+          }
           set({
             user: null,
             isAuthenticated: false,
             isLoading: false,
-            error: (err as Error).message,
+            error: errorMessage,
           });
           throw err;
         }

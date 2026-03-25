@@ -29,6 +29,7 @@ function meetsPolicy(password: string): boolean {
 }
 
 export default function SetupPage() {
+  useEffect(() => { document.title = "Setup - Galentix AI"; }, []);
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -96,7 +97,11 @@ export default function SetupPage() {
 
       navigate('/login', { replace: true });
     } catch (err) {
-      setError((err as Error).message);
+      if (err instanceof TypeError && (err as TypeError).message.includes('fetch')) {
+        setError('Server unreachable. Please check that Galentix AI is running.');
+      } else {
+        setError((err as Error).message);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -129,7 +134,7 @@ export default function SetupPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center px-4">
+    <main className="min-h-screen bg-gray-50 dark:bg-slate-900 flex items-center justify-center px-4">
       <div className="w-full max-w-md">
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-8">
           {/* Logo and Title */}
@@ -157,6 +162,7 @@ export default function SetupPage() {
               </label>
               <input
                 id="username"
+                name="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
@@ -170,10 +176,11 @@ export default function SetupPage() {
 
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                {t('auth.email')} <span className="text-gray-400 dark:text-gray-500 font-normal">({t('common.optional')})</span>
+                {t('auth.email')} <span className="text-gray-500 dark:text-gray-400 font-normal">({t('common.optional')})</span>
               </label>
               <input
                 id="email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -190,6 +197,7 @@ export default function SetupPage() {
               </label>
               <input
                 id="password"
+                name="password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -234,6 +242,7 @@ export default function SetupPage() {
               </label>
               <input
                 id="confirmPassword"
+                name="confirmPassword"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -265,13 +274,13 @@ export default function SetupPage() {
 
           {/* Footer */}
           <div className="mt-8 text-center">
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {t('system.privacyFooter')}
             </p>
           </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
@@ -281,9 +290,9 @@ function PolicyCheck({ met, label }: { met: boolean; label: string }) {
       {met ? (
         <Check className="w-3.5 h-3.5 text-green-500" />
       ) : (
-        <X className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+        <X className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
       )}
-      <span className={`text-xs ${met ? 'text-green-600 dark:text-green-400' : 'text-gray-400 dark:text-gray-500'}`}>
+      <span className={`text-xs ${met ? 'text-green-600 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>
         {label}
       </span>
     </div>

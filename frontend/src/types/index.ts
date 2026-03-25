@@ -107,6 +107,10 @@ export interface Settings {
     brand_color: string;
     theme: string;
   };
+  paths?: {
+    data_dir: string;
+    chroma_dir: string;
+  };
 }
 
 export interface SettingsUpdate {
@@ -114,6 +118,8 @@ export interface SettingsUpdate {
   max_tokens?: number;
   rag_enabled?: boolean;
   rag_top_k?: number;
+  chunk_size?: number;
+  chunk_overlap?: number;
   search_enabled?: boolean;
 }
 

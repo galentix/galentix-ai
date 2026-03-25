@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import GalentixLogo from '../components/ui/GalentixLogo';
 
 export default function NotFoundPage() {
+  useEffect(() => { document.title = "Page Not Found - Galentix AI"; }, []);
   return (
     <div className="h-full flex flex-col items-center justify-center bg-white dark:bg-slate-900 px-4">
       <GalentixLogo size="lg" className="mb-8" />

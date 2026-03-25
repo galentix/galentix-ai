@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom';
 import { useSettingsStore } from './stores/settingsStore';
 import { useAuthStore } from './stores/authStore';
@@ -51,13 +51,16 @@ function App() {
     document.documentElement.lang = language;
   }, [language]);
 
-  // Check authentication on app mount
+  // Check authentication on app mount (guard against StrictMode double-invocation)
+  const authCheckedRef = useRef(false);
   useEffect(() => {
+    if (authCheckedRef.current) return;
+    authCheckedRef.current = true;
     checkAuth();
   }, [checkAuth]);
 
   return (
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <div className="min-h-screen">
         <Routes>
           <Route path="/login" element={<LoginPage />} />

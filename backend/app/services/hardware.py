@@ -3,10 +3,13 @@ Galentix AI - Hardware Detection Service
 Automatically detects system capabilities and recommends optimal configuration.
 """
 import os
-import subprocess
 import platform
+import shutil
+import subprocess
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
+
+import psutil
 
 
 @dataclass
@@ -84,7 +87,7 @@ class HardwareDetector:
         info.ram_gb = self._detect_ram()
         
         # Detect CPU
-        info.cpu_cores = os.cpu_count() or 1
+        info.cpu_cores = os.cpu_count() or psutil.cpu_count(logical=False) or 1
         info.cpu_model = self._detect_cpu_model()
         
         # Detect GPU
@@ -103,24 +106,7 @@ class HardwareDetector:
                             kb = int(line.split()[1])
                             return kb // 1024 // 1024
             elif platform.system() == "Windows":
-                import ctypes
-                kernel32 = ctypes.windll.kernel32
-                c_ulong = ctypes.c_ulong
-                class MEMORYSTATUS(ctypes.Structure):
-                    _fields_ = [
-                        ('dwLength', c_ulong),
-                        ('dwMemoryLoad', c_ulong),
-                        ('dwTotalPhys', c_ulong),
-                        ('dwAvailPhys', c_ulong),
-                        ('dwTotalPageFile', c_ulong),
-                        ('dwAvailPageFile', c_ulong),
-                        ('dwTotalVirtual', c_ulong),
-                        ('dwAvailVirtual', c_ulong),
-                    ]
-                memoryStatus = MEMORYSTATUS()
-                memoryStatus.dwLength = ctypes.sizeof(MEMORYSTATUS)
-                kernel32.GlobalMemoryStatus(ctypes.byref(memoryStatus))
-                return memoryStatus.dwTotalPhys // 1024 // 1024 // 1024
+                return psutil.virtual_memory().total // (1024**3)
         except Exception:
             pass
         return 4  # Default assumption
@@ -134,24 +120,29 @@ class HardwareDetector:
                         if "model name" in line:
                             return line.split(":")[1].strip()
             elif platform.system() == "Windows":
-                return platform.processor()
+                cpu = platform.processor()
+                if cpu:
+                    return cpu
+                return os.environ.get('PROCESSOR_IDENTIFIER', 'Unknown')
         except Exception:
             pass
-        return "Unknown CPU"
+        return platform.processor() or os.environ.get('PROCESSOR_IDENTIFIER', 'Unknown CPU')
     
     def _detect_gpu(self) -> GPUInfo:
         """Detect NVIDIA GPU information."""
         gpu = GPUInfo()
-        
+
+        if not shutil.which("nvidia-smi"):
+            return gpu
+
         try:
-            # Check if nvidia-smi is available
             result = subprocess.run(
                 ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
                 capture_output=True,
                 text=True,
                 timeout=10
             )
-            
+
             if result.returncode == 0 and result.stdout.strip():
                 parts = result.stdout.strip().split(",")
                 gpu.detected = True
@@ -160,7 +151,7 @@ class HardwareDetector:
                 gpu.cuda_available = True
         except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
             pass
-        
+
         return gpu
     
     def get_recommended_config(self) -> Dict[str, Any]:

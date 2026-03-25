@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Cpu, HardDrive, Server, Info, RefreshCw, Download, Trash2, Check, Users, UserPlus, Shield, ShieldOff, ToggleLeft, ToggleRight, Save } from 'lucide-react';
+import { Cpu, HardDrive, Server, Info, RefreshCw, Download, Trash2, Check, Users, UserPlus, Shield, ShieldOff, ToggleLeft, ToggleRight, Save, AlertCircle } from 'lucide-react';
 import * as api from '../services/api';
 import { useAuthStore } from '../stores/authStore';
 import type { DeviceInfo, SystemStats, Settings, SettingsUpdate, ModelInfo } from '../types';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
 
 interface ManagedUser {
   id: string;
@@ -14,6 +15,7 @@ interface ManagedUser {
 }
 
 export default function SettingsPage() {
+  useEffect(() => { document.title = "Settings - Galentix AI"; }, []);
   const [deviceInfo, setDeviceInfo] = useState<DeviceInfo | null>(null);
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -37,6 +39,8 @@ export default function SettingsPage() {
   const [editRagEnabled, setEditRagEnabled] = useState<boolean>(true);
   const [editRagTopK, setEditRagTopK] = useState<number>(5);
   const [editSearchEnabled, setEditSearchEnabled] = useState<boolean>(true);
+  const [editChunkSize, setEditChunkSize] = useState<number>(1000);
+  const [editChunkOverlap, setEditChunkOverlap] = useState<number>(200);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsDirty, setSettingsDirty] = useState(false);
 
@@ -46,6 +50,8 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState<'user' | 'admin'>('user');
   const [userActionLoading, setUserActionLoading] = useState<string | null>(null);
+  const [deleteUserConfirm, setDeleteUserConfirm] = useState<ManagedUser | null>(null);
+  const [deleteModelConfirm, setDeleteModelConfirm] = useState<string | null>(null);
 
   const API_BASE = '/api';
 
@@ -92,7 +98,6 @@ export default function SettingsPage() {
 
   const handleDeleteUser = async (user: ManagedUser) => {
     if (user.id === authUser?.id) return;
-    if (!window.confirm(`Delete user "${user.username}"? This cannot be undone.`)) return;
     setUserActionLoading(user.id);
     try {
       const response = await fetch(`${API_BASE}/auth/users/${user.id}`, {
@@ -224,6 +229,8 @@ export default function SettingsPage() {
       setEditMaxTokens(settings.llm.max_tokens);
       setEditRagEnabled(settings.rag.enabled);
       setEditRagTopK(settings.rag.top_k);
+      setEditChunkSize(settings.rag.chunk_size);
+      setEditChunkOverlap(settings.rag.chunk_overlap);
       setEditSearchEnabled(settings.search.enabled);
       setSettingsDirty(false);
     }
@@ -239,6 +246,8 @@ export default function SettingsPage() {
       if (editMaxTokens !== settings.llm.max_tokens) updates.max_tokens = editMaxTokens;
       if (editRagEnabled !== settings.rag.enabled) updates.rag_enabled = editRagEnabled;
       if (editRagTopK !== settings.rag.top_k) updates.rag_top_k = editRagTopK;
+      if (editChunkSize !== settings.rag.chunk_size) updates.chunk_size = editChunkSize;
+      if (editChunkOverlap !== settings.rag.chunk_overlap) updates.chunk_overlap = editChunkOverlap;
       if (editSearchEnabled !== settings.search.enabled) updates.search_enabled = editSearchEnabled;
 
       if (Object.keys(updates).length === 0) {
@@ -305,7 +314,6 @@ export default function SettingsPage() {
   };
 
   const handleDeleteModel = async (modelName: string) => {
-    if (!confirm(`Delete model "${modelName}"? This cannot be undone.`)) return;
     setDeletingModel(modelName);
     setStatusMessage(null);
     try {
@@ -336,6 +344,14 @@ export default function SettingsPage() {
     <div className="h-full overflow-y-auto p-6 bg-gray-50 dark:bg-slate-900">
       <div className="max-w-4xl mx-auto">
         <h1 className="text-2xl font-bold mb-6">Settings & System Info</h1>
+
+        {/* Unsaved Changes Indicator */}
+        {settingsDirty && (
+          <div className="mb-4 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-amber-700 dark:text-amber-300 text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            <span>You have unsaved changes</span>
+          </div>
+        )}
 
         {/* Status Message */}
         {statusMessage && (
@@ -412,7 +428,7 @@ export default function SettingsPage() {
               Downloaded models
             </label>
             {models.length === 0 ? (
-              <p className="text-sm text-gray-400 dark:text-gray-500 italic">No models found. Download one above or check Ollama status.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 italic">No models found. Download one above or check Ollama status.</p>
             ) : (
               <div className="space-y-2">
                 {models.map((model) => (
@@ -449,7 +465,7 @@ export default function SettingsPage() {
                             {switchingModel === model.name ? 'Switching...' : 'Use'}
                           </button>
                           <button
-                            onClick={() => handleDeleteModel(model.name)}
+                            onClick={() => setDeleteModelConfirm(model.name)}
                             disabled={deletingModel === model.name}
                             className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-50"
                             title="Delete model"
@@ -484,8 +500,9 @@ export default function SettingsPage() {
                         max="1"
                         step="0.1"
                         value={editTemperature}
-                        onChange={(e) => { setEditTemperature(parseFloat(e.target.value)); markDirty(); }}
+                        onChange={(e) => { setEditTemperature(Math.round(parseFloat(e.target.value) * 10) / 10); markDirty(); }}
                         className="w-28 accent-galentix-500"
+                        aria-label="Temperature"
                       />
                       <span className="font-medium w-8 text-end">{editTemperature.toFixed(1)}</span>
                     </div>
@@ -500,6 +517,7 @@ export default function SettingsPage() {
                       value={editMaxTokens}
                       onChange={(e) => { setEditMaxTokens(Math.max(256, Math.min(8192, parseInt(e.target.value) || 256))); markDirty(); }}
                       className="w-24 px-2 py-1 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-end font-medium focus:outline-none focus:ring-2 focus:ring-galentix-500"
+                      aria-label="Max Tokens"
                     />
                   </div>
                 </>
@@ -583,6 +601,9 @@ export default function SettingsPage() {
                     <span className="text-gray-500 dark:text-gray-400">Enabled</span>
                     <button
                       type="button"
+                      role="switch"
+                      aria-checked={editRagEnabled}
+                      aria-label="Toggle RAG"
                       onClick={() => { setEditRagEnabled(!editRagEnabled); markDirty(); }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                         editRagEnabled ? 'bg-galentix-500' : 'bg-gray-300 dark:bg-slate-600'
@@ -598,8 +619,41 @@ export default function SettingsPage() {
                 ) : (
                   <InfoRow label="Enabled" value={settings.rag.enabled ? 'Yes' : 'No'} />
                 )}
-                <InfoRow label="Chunk Size" value={settings.rag.chunk_size.toString()} />
-                <InfoRow label="Chunk Overlap" value={settings.rag.chunk_overlap.toString()} />
+                {isAdmin ? (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 dark:text-gray-400">Chunk Size</span>
+                      <input
+                        type="number"
+                        min="100"
+                        max="10000"
+                        step="100"
+                        value={editChunkSize}
+                        onChange={(e) => { setEditChunkSize(Math.max(100, Math.min(10000, parseInt(e.target.value) || 100))); markDirty(); }}
+                        className="w-24 px-2 py-1 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-end font-medium focus:outline-none focus:ring-2 focus:ring-galentix-500"
+                        aria-label="Chunk Size"
+                      />
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-500 dark:text-gray-400">Chunk Overlap</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="5000"
+                        step="50"
+                        value={editChunkOverlap}
+                        onChange={(e) => { setEditChunkOverlap(Math.max(0, Math.min(5000, parseInt(e.target.value) || 0))); markDirty(); }}
+                        className="w-24 px-2 py-1 rounded-md border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm text-end font-medium focus:outline-none focus:ring-2 focus:ring-galentix-500"
+                        aria-label="Chunk Overlap"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <InfoRow label="Chunk Size" value={settings.rag.chunk_size.toString()} />
+                    <InfoRow label="Chunk Overlap" value={settings.rag.chunk_overlap.toString()} />
+                  </>
+                )}
                 {isAdmin ? (
                   <div className="flex justify-between items-center">
                     <span className="text-gray-500 dark:text-gray-400">Top K Results</span>
@@ -633,6 +687,9 @@ export default function SettingsPage() {
                     <span className="text-gray-500 dark:text-gray-400">Enabled</span>
                     <button
                       type="button"
+                      role="switch"
+                      aria-checked={editSearchEnabled}
+                      aria-label="Toggle Web Search"
                       onClick={() => { setEditSearchEnabled(!editSearchEnabled); markDirty(); }}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                         editSearchEnabled ? 'bg-galentix-500' : 'bg-gray-300 dark:bg-slate-600'
@@ -747,7 +804,7 @@ export default function SettingsPage() {
 
             {/* Users List */}
             {users.length === 0 ? (
-              <p className="text-sm text-gray-400 dark:text-gray-500 italic">No users found.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 italic">No users found.</p>
             ) : (
               <div className="space-y-2">
                 {users.map((user) => (
@@ -783,41 +840,45 @@ export default function SettingsPage() {
                           </span>
                         </div>
                         {user.email && (
-                          <span className="text-xs text-gray-400 dark:text-gray-500">{user.email}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">{user.email}</span>
                         )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {/* Toggle role */}
-                      <button
-                        onClick={() => handleToggleRole(user)}
-                        disabled={userActionLoading === user.id}
-                        className="p-1.5 text-gray-400 hover:text-galentix-500 disabled:opacity-50"
-                        title={user.role === 'admin' ? 'Demote to user' : 'Promote to admin'}
-                      >
-                        {user.role === 'admin' ? (
-                          <Shield className="w-4 h-4" />
-                        ) : (
-                          <ShieldOff className="w-4 h-4" />
-                        )}
-                      </button>
+                      {user.id !== authUser?.id && (
+                        <button
+                          onClick={() => handleToggleRole(user)}
+                          disabled={userActionLoading === user.id}
+                          className="p-1.5 text-gray-400 hover:text-galentix-500 disabled:opacity-50"
+                          title={user.role === 'admin' ? 'Demote to user' : 'Promote to admin'}
+                        >
+                          {user.role === 'admin' ? (
+                            <Shield className="w-4 h-4" />
+                          ) : (
+                            <ShieldOff className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
                       {/* Toggle active */}
-                      <button
-                        onClick={() => handleToggleActive(user)}
-                        disabled={userActionLoading === user.id}
-                        className="p-1.5 text-gray-400 hover:text-yellow-500 disabled:opacity-50"
-                        title={user.is_active ? 'Deactivate user' : 'Activate user'}
-                      >
-                        {user.is_active ? (
-                          <ToggleRight className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <ToggleLeft className="w-4 h-4" />
-                        )}
-                      </button>
+                      {user.id !== authUser?.id && (
+                        <button
+                          onClick={() => handleToggleActive(user)}
+                          disabled={userActionLoading === user.id}
+                          className="p-1.5 text-gray-400 hover:text-yellow-500 disabled:opacity-50"
+                          title={user.is_active ? 'Deactivate user' : 'Activate user'}
+                        >
+                          {user.is_active ? (
+                            <ToggleRight className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <ToggleLeft className="w-4 h-4" />
+                          )}
+                        </button>
+                      )}
                       {/* Delete user */}
                       {user.id !== authUser?.id && (
                         <button
-                          onClick={() => handleDeleteUser(user)}
+                          onClick={() => setDeleteUserConfirm(user)}
                           disabled={userActionLoading === user.id}
                           className="p-1.5 text-gray-400 hover:text-red-500 disabled:opacity-50"
                           title="Delete user"
@@ -843,6 +904,32 @@ export default function SettingsPage() {
           <p className="mt-1">100% Private - Your data stays on this device</p>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteUserConfirm !== null}
+        title="Delete User"
+        message={`Delete user "${deleteUserConfirm?.username}"? This cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+        onConfirm={() => {
+          if (deleteUserConfirm) handleDeleteUser(deleteUserConfirm);
+          setDeleteUserConfirm(null);
+        }}
+        onCancel={() => setDeleteUserConfirm(null)}
+      />
+
+      <ConfirmDialog
+        open={deleteModelConfirm !== null}
+        title="Delete Model"
+        message={`Delete model "${deleteModelConfirm}"? This cannot be undone.`}
+        confirmText="Delete"
+        variant="danger"
+        onConfirm={() => {
+          if (deleteModelConfirm) handleDeleteModel(deleteModelConfirm);
+          setDeleteModelConfirm(null);
+        }}
+        onCancel={() => setDeleteModelConfirm(null)}
+      />
     </div>
   );
 }

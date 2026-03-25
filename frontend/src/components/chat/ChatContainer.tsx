@@ -21,6 +21,7 @@ export default function ChatContainer() {
 
   const [llmReady, setLlmReady] = useState(true); // optimistic until first check
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const healthAbortRef = useRef<AbortController | null>(null);
 
   // Poll LLM health on mount; stop once healthy
   useEffect(() => {
@@ -28,8 +29,15 @@ export default function ChatContainer() {
     let interval: ReturnType<typeof setInterval> | null = null;
 
     const checkHealth = async () => {
+      // Abort previous in-flight health check
+      if (healthAbortRef.current) {
+        healthAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      healthAbortRef.current = controller;
+
       try {
-        const health = await api.getHealth();
+        const health = await api.getHealth(controller.signal);
         const isHealthy = health.llm_status === 'healthy' || health.llm_status === 'online';
         if (!cancelled) {
           setLlmReady(isHealthy);
@@ -49,6 +57,7 @@ export default function ChatContainer() {
     return () => {
       cancelled = true;
       if (interval) clearInterval(interval);
+      if (healthAbortRef.current) healthAbortRef.current.abort();
     };
   }, []);
 
@@ -118,7 +127,7 @@ export default function ChatContainer() {
         )}
 
         {/* Input */}
-        <ChatInput />
+        <ChatInput disabled={!llmReady} />
       </div>
 
       {/* Desktop: sources panel renders as side panel */}

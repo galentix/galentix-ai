@@ -59,9 +59,13 @@ export default function Header() {
   };
 
   useEffect(() => {
+    let abortController: AbortController | null = null;
+
     const fetchHealth = async () => {
+      if (abortController) abortController.abort();
+      abortController = new AbortController();
       try {
-        const data = await api.getHealth();
+        const data = await api.getHealth(abortController.signal);
         setHealth(data);
       } catch {
         setHealth(null);
@@ -70,7 +74,10 @@ export default function Header() {
 
     fetchHealth();
     const interval = setInterval(fetchHealth, 30000); // Every 30 seconds
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (abortController) abortController.abort();
+    };
   }, []);
 
   const getStatusColor = (status: string) => {
@@ -96,15 +103,15 @@ export default function Header() {
           <button
             onClick={toggleSidebar}
             aria-label="Toggle sidebar"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
           >
             <Menu className="w-5 h-5" />
           </button>
         )}
 
-        {/* Status indicators */}
+        {/* Status indicators - hidden on mobile */}
         {health && (
-          <div className="flex items-center gap-4 text-sm">
+          <div className="hidden sm:flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2" title={`LLM: ${health.llm_status}`}>
               <Cpu className={`w-4 h-4 ${getStatusColor(health.llm_status)}`} />
               <span className="text-gray-600 dark:text-gray-300">{health.llm_model}</span>
@@ -135,7 +142,7 @@ export default function Header() {
             <button
               onClick={() => setExportOpen((v) => !v)}
               aria-label="Export conversation"
-              className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+              className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
               title="Export conversation"
             >
               <Download className="w-5 h-5" />
@@ -171,7 +178,7 @@ export default function Header() {
           <button
             onClick={() => setHelpOpen((v) => !v)}
             aria-label="Help and tips"
-            className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+            className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
             title="Help & tips"
           >
             <HelpCircle className="w-5 h-5" />
@@ -219,7 +226,7 @@ export default function Header() {
         <button
           onClick={toggleTheme}
           aria-label="Toggle dark mode"
-          className="p-2 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+          className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
           title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
         >
           {theme === 'dark' ? (
@@ -231,7 +238,7 @@ export default function Header() {
 
         {/* Version badge */}
         {health && (
-          <span className="text-xs text-gray-400 dark:text-gray-500 px-2 py-1 bg-gray-100 dark:bg-slate-700 rounded">
+          <span className="text-xs text-gray-500 dark:text-gray-400 px-2 py-1 bg-gray-100 dark:bg-slate-700 rounded">
             v{health.version}
           </span>
         )}
