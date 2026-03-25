@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo } from 'react';
 import Message from './Message'
 import type { Message as MessageType } from '../../types'
 

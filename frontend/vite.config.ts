@@ -21,7 +21,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: false,
-    minify: 'terser',
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         manualChunks: {
@@ -29,12 +29,6 @@ export default defineConfig({
           ui: ['lucide-react', 'clsx', 'tailwind-merge', 'class-variance-authority'],
           markdown: ['react-markdown', 'remark-gfm'],
         }
-      }
-    },
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true
       }
     }
   },
