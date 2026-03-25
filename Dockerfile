@@ -8,20 +8,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    nodejs \
-    npm \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sSL https://ollama.ai/install.sh | sh
 
 COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-COPY frontend/package.json frontend/package-lock.json ./frontend/
-RUN cd frontend && npm install
-
-COPY frontend/ ./frontend/
-RUN cd frontend && npm run build
 
 FROM python:3.11-slim
 
