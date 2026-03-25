@@ -94,23 +94,39 @@ app.include_router(system_router)
 
 
 # Serve static files (frontend)
-# Check production path first, then dev path
-frontend_path = settings.base_dir / "frontend"
-if not (frontend_path / "index.html").exists():
-    frontend_path = Path(__file__).parent.parent.parent / "frontend" / "dist"
-if frontend_path.exists() and (frontend_path / "assets").exists():
-    app.mount("/assets", StaticFiles(directory=frontend_path / "assets"), name="assets")
+# Check multiple paths for frontend: production, local repo, then fallback
+possible_paths = [
+    settings.base_dir / "frontend",
+    Path(__file__).parent.parent.parent / "frontend",
+    Path(__file__).parent.parent.parent / "frontend" / "dist",
+]
+frontend_path: Path | None = None
+for path in possible_paths:
+    if (path / "index.html").exists():
+        frontend_path = path
+        break
+    if (path / "dist" / "index.html").exists():
+        frontend_path = path / "dist"
+        break
+
+if frontend_path and frontend_path.exists() and (frontend_path / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=str(frontend_path / "assets")), name="assets")
 
 
 # Serve frontend for all non-API routes (SPA support)
 @app.get("/")
 async def serve_root():
     """Serve the frontend index.html."""
+    if frontend_path is None:
+        return JSONResponse({
+            "message": f"Welcome to {settings.brand_name} API",
+            "version": "2.0.0",
+            "docs": "/api/docs",
+            "health": "/api/system/health"
+        })
     index_path = frontend_path / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-    
-    # Fallback if frontend not built
     return JSONResponse({
         "message": f"Welcome to {settings.brand_name} API",
         "version": "2.0.0",
@@ -122,20 +138,16 @@ async def serve_root():
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     """Catch-all route for SPA frontend."""
-    # Don't intercept API routes
+    if frontend_path is None:
+        return JSONResponse({"error": "Not found"}, status_code=404)
     if full_path.startswith("api/"):
         return JSONResponse({"error": "Not found"}, status_code=404)
-    
-    # Try to serve static file
     static_file = frontend_path / full_path
     if static_file.exists() and static_file.is_file():
         return FileResponse(static_file)
-    
-    # Fallback to index.html for SPA routing
     index_path = frontend_path / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
-    
     return JSONResponse({"error": "Not found"}, status_code=404)
 
 
