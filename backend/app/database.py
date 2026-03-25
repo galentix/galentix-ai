@@ -12,15 +12,19 @@ POOL_SIZE = int(os.environ.get('DB_POOL_SIZE', '10'))
 POOL_MAX_OVERFLOW = int(os.environ.get('DB_POOL_OVERFLOW', '20'))
 POOL_TIMEOUT = int(os.environ.get('DB_POOL_TIMEOUT', '30'))
 
+is_sqlite = settings.database_url.startswith("sqlite")
+
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
     future=True,
-    pool_size=POOL_SIZE,
-    max_overflow=POOL_MAX_OVERFLOW,
-    pool_timeout=POOL_TIMEOUT,
-    pool_pre_ping=True,
-    pool_recycle=3600,
+    **({
+        "pool_size": POOL_SIZE,
+        "max_overflow": POOL_MAX_OVERFLOW,
+        "pool_timeout": POOL_TIMEOUT,
+        "pool_pre_ping": True,
+        "pool_recycle": 3600,
+    } if not is_sqlite else {"connect_args": {"check_same_thread": False}}),
 )
 
 async_session = async_sessionmaker(
