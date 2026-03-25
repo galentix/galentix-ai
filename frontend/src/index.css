@@ -6,6 +6,17 @@
   --color-galentix: #6BBF9E;
 }
 
+/* Base dark-mode background so the page never flashes black/white incorrectly */
+html.dark {
+  background-color: #0f172a; /* slate-900 */
+  color: #f3f4f6;           /* gray-100 */
+}
+
+html:not(.dark) {
+  background-color: #f9fafb; /* gray-50 */
+  color: #111827;            /* gray-900 */
+}
+
 /* Custom scrollbar - light mode */
 ::-webkit-scrollbar {
   width: 8px;
