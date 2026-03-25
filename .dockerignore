@@ -1,0 +1,48 @@
+# Ignore unnecessary files for Docker build
+# Build artifacts
+dist/
+build/
+*.pyc
+__pycache__/
+*.pyo
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Documentation
+*.md
+!README.md
+
+# Scripts
+*.sh
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backend specific
+backend/__pycache__/
+backend/**/__pycache__/
+*.db
+
+# Frontend specific
+frontend/node_modules/
+frontend/.vite/

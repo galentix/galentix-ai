@@ -1,26 +1,34 @@
 """
 Galentix AI - Database Configuration
+Optimized with connection pooling.
 """
+import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import event
 from .config import settings
 
-# Create async engine
+POOL_SIZE = int(os.environ.get('DB_POOL_SIZE', '10'))
+POOL_MAX_OVERFLOW = int(os.environ.get('DB_POOL_OVERFLOW', '20'))
+POOL_TIMEOUT = int(os.environ.get('DB_POOL_TIMEOUT', '30'))
+
 engine = create_async_engine(
     settings.database_url,
     echo=settings.debug,
-    future=True
+    future=True,
+    pool_size=POOL_SIZE,
+    max_overflow=POOL_MAX_OVERFLOW,
+    pool_timeout=POOL_TIMEOUT,
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
-# Create async session factory
 async_session = async_sessionmaker(
     engine,
     class_=AsyncSession,
     expire_on_commit=False
 )
 
-# Base class for models
 Base = declarative_base()
 
 
@@ -30,8 +38,8 @@ async def init_db():
         await conn.run_sync(Base.metadata.create_all)
 
 
-async def get_db() -> AsyncSession:
-    """Dependency to get database session."""
+async def get_db():
+    """Dependency to get database session with connection pooling."""
     async with async_session() as session:
         try:
             yield session

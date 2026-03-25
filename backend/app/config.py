@@ -35,9 +35,13 @@ class Settings(BaseSettings):
     # RAG Settings
     rag_enabled: bool = True
     rag_chunk_size: int = 500
-    rag_chunk_overlap: int = 50
+    rag_chunk_overlap: int = 100
     rag_top_k: int = 5
     embedding_model: str = "nomic-embed-text"
+    embedding_backend: str = "ollama"
+    rag_vector_weight: float = 0.5
+    rag_bm25_weight: float = 0.5
+    rag_rerank: bool = True
     
     # Web Search Settings
     search_enabled: bool = True
@@ -87,6 +91,10 @@ def load_settings() -> Settings:
                 settings.rag_chunk_overlap = rag.get('chunk_overlap', settings.rag_chunk_overlap)
                 settings.rag_top_k = rag.get('top_k', settings.rag_top_k)
                 settings.embedding_model = rag.get('embedding_model', settings.embedding_model)
+                settings.embedding_backend = rag.get('embedding_backend', settings.embedding_backend)
+                settings.rag_vector_weight = rag.get('vector_weight', settings.rag_vector_weight)
+                settings.rag_bm25_weight = rag.get('bm25_weight', settings.rag_bm25_weight)
+                settings.rag_rerank = rag.get('rerank', settings.rag_rerank)
             
             if 'search' in config_data:
                 search = config_data['search']
@@ -132,7 +140,11 @@ def save_settings(current_settings: Settings) -> None:
             "chunk_size": current_settings.rag_chunk_size,
             "chunk_overlap": current_settings.rag_chunk_overlap,
             "top_k": current_settings.rag_top_k,
-            "embedding_model": current_settings.embedding_model
+            "embedding_model": current_settings.embedding_model,
+            "embedding_backend": current_settings.embedding_backend,
+            "vector_weight": current_settings.rag_vector_weight,
+            "bm25_weight": current_settings.rag_bm25_weight,
+            "rerank": current_settings.rag_rerank
         },
         "search": {
             "enabled": current_settings.search_enabled,

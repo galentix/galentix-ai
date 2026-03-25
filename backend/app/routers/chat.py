@@ -6,21 +6,32 @@ import json
 import uuid
 from typing import Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from ..database import get_db
 from ..models.conversation import Conversation, Message
-from ..models.schemas import ChatRequest, ChatResponse
+from ..models.schemas import ChatRequest, ChatResponse, ErrorResponse
 from ..services.llm import get_llm_service, LLMService
 from ..services.llm.base import LLMMessage
 from ..services.rag import get_rag_pipeline
 from ..services.websearch import get_search_service
 from ..config import settings
 
-router = APIRouter(prefix="/api/chat", tags=["chat"])
+router = APIRouter(
+    prefix="/api/chat",
+    tags=["chat"],
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid request"},
+        422: {"model": ErrorResponse, "description": "Validation error"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        503: {"model": ErrorResponse, "description": "Service unavailable"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    }
+)
 
 # System prompt for Galentix AI
 SYSTEM_PROMPT = """You are Galentix AI, a helpful, intelligent assistant running locally on this device. 
@@ -166,18 +177,42 @@ async def generate_response_stream(
     yield f"data: {json.dumps({'type': 'done', 'conversation_id': conversation_id})}\n\n"
 
 
-@router.post("/stream")
+@router.post(
+    "/stream",
+    summary="Stream chat response",
+    description="Send a chat message and receive a streaming response with SSE (Server-Sent Events). Supports RAG context from uploaded documents and optional web search.",
+    response_class=StreamingResponse,
+    responses={
+        200: {"description": "Successful streaming response"},
+        400: {"model": ErrorResponse, "description": "Invalid request - empty message or invalid conversation ID"},
+        404: {"model": ErrorResponse, "description": "Conversation not found"},
+        422: {"model": ErrorResponse, "description": "Validation error in request body"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded - too many requests"},
+        503: {"model": ErrorResponse, "description": "LLM service unavailable"}
+    }
+)
 async def chat_stream(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Stream chat response with SSE."""
     
-    # Get or create conversation
+    if not request.message or not request.message.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message cannot be empty"
+        )
+    
+    llm = get_llm_service()
+    if not await llm.health_check():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM service is not available. Please check the model is loaded."
+        )
+    
     conversation_id = request.conversation_id
     
     if not conversation_id:
-        # Create new conversation
         conversation = Conversation(
             id=str(uuid.uuid4()),
             title="New Conversation"
@@ -186,12 +221,14 @@ async def chat_stream(
         await db.commit()
         conversation_id = conversation.id
     else:
-        # Verify conversation exists
         result = await db.execute(
             select(Conversation).where(Conversation.id == conversation_id)
         )
         if not result.scalar_one_or_none():
-            raise HTTPException(status_code=404, detail="Conversation not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
     
     return StreamingResponse(
         generate_response_stream(
@@ -210,17 +247,40 @@ async def chat_stream(
     )
 
 
-@router.post("/", response_model=ChatResponse)
+@router.post(
+    "/",
+    response_model=ChatResponse,
+    summary="Send chat message (non-streaming)",
+    description="Send a chat message and receive a complete response. Does not stream tokens - returns the full response at once.",
+    responses={
+        200: {"description": "Successful chat response"},
+        400: {"model": ErrorResponse, "description": "Invalid request"},
+        404: {"model": ErrorResponse, "description": "Conversation not found"},
+        422: {"model": ErrorResponse, "description": "Validation error"},
+        503: {"model": ErrorResponse, "description": "LLM service unavailable"}
+    }
+)
 async def chat(
     request: ChatRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Non-streaming chat endpoint."""
+    if not request.message or not request.message.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message cannot be empty"
+        )
+    
     llm = get_llm_service()
+    if not await llm.health_check():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="LLM service is not available"
+        )
+    
     rag = get_rag_pipeline()
     search = get_search_service()
     
-    # Get or create conversation
     conversation_id = request.conversation_id
     
     if not conversation_id:

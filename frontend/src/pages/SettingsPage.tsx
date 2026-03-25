@@ -118,53 +118,60 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <RefreshCw className="w-8 h-8 animate-spin text-gray-400" />
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="w-8 h-8 animate-spin text-galentix-300" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading settings...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full overflow-y-auto p-6 bg-gray-50 dark:bg-slate-900">
+    <div className="h-full overflow-y-auto p-4 md:p-6 bg-gray-50 dark:bg-slate-900">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-6">Settings & System Info</h1>
+        <h1 className="text-2xl font-bold mb-6 animate-fade-in">Settings & System Info</h1>
 
-        {/* Status Message */}
         {statusMessage && (
-          <div className={`mb-6 p-4 rounded-lg border ${
-            statusMessage.type === 'success'
-              ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
-              : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
-          }`}>
+          <div 
+            className={`mb-6 p-4 rounded-lg border animate-slide-up ${
+              statusMessage.type === 'success'
+                ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200'
+                : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200'
+            }`}
+            role="alert"
+          >
             {statusMessage.text}
           </div>
         )}
 
-        {/* Model Management - Full Width */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700 mb-6">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700 mb-6 animate-slide-up">
           <div className="flex items-center gap-3 mb-4">
-            <Cpu className="w-5 h-5 text-galentix-300" />
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-galentix-300 to-galentix-500 flex items-center justify-center shadow-lg shadow-galentix-300/20">
+              <Cpu className="w-5 h-5 text-white" />
+            </div>
             <h2 className="text-lg font-semibold">AI Models</h2>
           </div>
 
-          {/* Download New Model */}
           <div className="mb-6">
-            <label className="block text-sm text-gray-500 dark:text-gray-400 mb-2">
+            <label htmlFor="model-input" className="block text-sm text-gray-500 dark:text-gray-400 mb-2">
               Download a new model
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
+                id="model-input"
                 type="text"
                 value={newModelName}
                 onChange={(e) => setNewModelName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handlePullModel()}
                 placeholder="Enter Ollama model ID (e.g. llama3:8b, mistral:7b)"
-                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-galentix-300"
+                className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-galentix-300 focus:border-transparent transition-all"
                 disabled={isPulling}
+                aria-describedby="model-help"
               />
               <button
                 onClick={handlePullModel}
                 disabled={isPulling || !newModelName.trim()}
-                className="px-4 py-2 bg-galentix-300 text-white rounded-lg text-sm font-medium hover:bg-galentix-400 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-4 py-2 bg-gradient-to-r from-galentix-300 to-galentix-400 text-white rounded-lg text-sm font-medium hover:from-galentix-400 hover:to-galentix-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all hover:shadow-lg hover:shadow-galentix-300/20 focus:ring-2 focus:ring-galentix-300 focus:ring-offset-2"
               >
                 {isPulling ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />
@@ -174,9 +181,11 @@ export default function SettingsPage() {
                 {isPulling ? 'Downloading...' : 'Download'}
               </button>
             </div>
-            {/* Download Progress Bar */}
+            <p id="model-help" className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+              Enter the Ollama model ID from model library
+            </p>
             {isPulling && pullProgress && (
-              <div className="mt-3">
+              <div className="mt-3 animate-fade-in">
                 <div className="flex justify-between items-center mb-1">
                   <span className="text-xs text-gray-500 dark:text-gray-400">
                     {pullProgress.status || 'Downloading...'}
@@ -189,7 +198,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-galentix-300 rounded-full transition-all duration-300"
+                    className="h-full bg-gradient-to-r from-galentix-300 to-galentix-400 rounded-full transition-all duration-300"
                     style={{ width: `${pullProgress.percent ?? 0}%` }}
                   />
                 </div>
@@ -197,7 +206,6 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* Models List */}
           <div>
             <label className="block text-sm text-gray-500 dark:text-gray-400 mb-2">
               Downloaded models
@@ -206,14 +214,15 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-400 dark:text-gray-500 italic">No models found. Download one above or check Ollama status.</p>
             ) : (
               <div className="space-y-2">
-                {models.map((model) => (
+                {models.map((model, index) => (
                   <div
                     key={model.name}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${
+                    className={`flex items-center justify-between p-3 rounded-lg border transition-all duration-200 ${
                       model.name === activeModel
-                        ? 'border-galentix-300 bg-galentix-300/10'
-                        : 'border-gray-200 dark:border-slate-600'
+                        ? 'border-galentix-300 bg-galentix-300/10 shadow-sm'
+                        : 'border-gray-200 dark:border-slate-600 hover:border-galentix-200 dark:hover:border-galentix-700'
                     }`}
+                    style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <div className="flex items-center gap-3">
                       {model.name === activeModel && (
@@ -235,15 +244,16 @@ export default function SettingsPage() {
                           <button
                             onClick={() => handleSwitchModel(model.name)}
                             disabled={switchingModel !== null}
-                            className="px-3 py-1 text-xs font-medium rounded-md bg-galentix-300 text-white hover:bg-galentix-400 disabled:opacity-50"
+                            className="px-3 py-1 text-xs font-medium rounded-md bg-galentix-300 text-white hover:bg-galentix-400 disabled:opacity-50 transition-all hover:shadow-md"
                           >
                             {switchingModel === model.name ? 'Switching...' : 'Use'}
                           </button>
                           <button
                             onClick={() => handleDeleteModel(model.name)}
                             disabled={deletingModel === model.name}
-                            className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-50"
+                            className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors"
                             title="Delete model"
+                            aria-label={`Delete model ${model.name}`}
                           >
                             {deletingModel === model.name ? (
                               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -260,7 +270,6 @@ export default function SettingsPage() {
             )}
           </div>
 
-          {/* Current Config */}
           {settings && deviceInfo && (
             <div className="mt-4 pt-4 border-t border-gray-200 dark:border-slate-700 space-y-3">
               <InfoRow label="Engine" value={deviceInfo.llm.engine.toUpperCase()} />
@@ -271,98 +280,72 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Device Info */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700">
-            <div className="flex items-center gap-3 mb-4">
-              <Server className="w-5 h-5 text-galentix-300" />
-              <h2 className="text-lg font-semibold">Device Information</h2>
-            </div>
-
-            {deviceInfo && (
-              <div className="space-y-3">
-                <InfoRow label="Device ID" value={deviceInfo.device_id.substring(0, 16) + '...'} />
-                <InfoRow label="Version" value={deviceInfo.version} />
-                <InfoRow label="Uptime" value={deviceInfo.uptime || 'N/A'} />
-                <InfoRow label="CPU" value={deviceInfo.hardware.cpu_model} />
-                <InfoRow label="CPU Cores" value={deviceInfo.hardware.cpu_cores.toString()} />
-                <InfoRow label="RAM" value={`${deviceInfo.hardware.ram_gb} GB`} />
-                <InfoRow
-                  label="GPU"
-                  value={deviceInfo.hardware.gpu_detected ? deviceInfo.hardware.gpu_name : 'None detected'}
-                />
+          {[
+            { icon: Server, title: 'Device Information', info: deviceInfo ? [
+              { label: 'Device ID', value: deviceInfo.device_id.substring(0, 16) + '...' },
+              { label: 'Version', value: deviceInfo.version },
+              { label: 'Uptime', value: deviceInfo.uptime || 'N/A' },
+              { label: 'CPU', value: deviceInfo.hardware.cpu_model },
+              { label: 'CPU Cores', value: deviceInfo.hardware.cpu_cores.toString() },
+              { label: 'RAM', value: `${deviceInfo.hardware.ram_gb} GB` },
+              { label: 'GPU', value: deviceInfo.hardware.gpu_detected ? deviceInfo.hardware.gpu_name : 'None detected' },
+            ] : [] },
+            { icon: HardDrive, title: 'System Resources', stats: systemStats ? [
+              { label: 'CPU', value: systemStats.cpu_percent },
+              { label: 'Memory', value: systemStats.memory_percent },
+              { label: 'Disk', value: systemStats.disk_percent },
+            ] : [] },
+            { icon: Info, title: 'Usage Statistics', info: systemStats ? [
+              { label: 'Conversations', value: systemStats.conversations_count.toString() },
+              { label: 'Messages', value: systemStats.messages_count.toString() },
+              { label: 'Documents', value: systemStats.documents_count.toString() },
+            ] : [] },
+            { icon: HardDrive, title: 'RAG Configuration', info: settings ? [
+              { label: 'Enabled', value: settings.rag.enabled ? 'Yes' : 'No' },
+              { label: 'Chunk Size', value: settings.rag.chunk_size.toString() },
+              { label: 'Chunk Overlap', value: settings.rag.chunk_overlap.toString() },
+              { label: 'Top K Results', value: settings.rag.top_k.toString() },
+            ] : [] },
+            { icon: Info, title: 'Web Search', info: settings ? [
+              { label: 'Enabled', value: settings.search.enabled ? 'Yes' : 'No' },
+              { label: 'Max Results', value: settings.search.max_results.toString() },
+            ] : [] },
+          ].map((card, index) => (
+            <div 
+              key={card.title}
+              className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700 hover:shadow-lg hover:shadow-galentix-300/5 transition-all duration-200 animate-slide-up"
+              style={{ animationDelay: `${index * 100}ms` }}
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-galentix-300/20 to-galentix-500/20 flex items-center justify-center">
+                  <card.icon className="w-5 h-5 text-galentix-300" />
+                </div>
+                <h2 className="text-lg font-semibold">{card.title}</h2>
               </div>
-            )}
-          </div>
-
-          {/* System Stats */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700">
-            <div className="flex items-center gap-3 mb-4">
-              <HardDrive className="w-5 h-5 text-galentix-300" />
-              <h2 className="text-lg font-semibold">System Resources</h2>
+              
+              {'stats' in card && card.stats ? (
+                <div className="space-y-4">
+                  {card.stats.map(stat => (
+                    <ResourceBar key={stat.label} label={stat.label} value={stat.value} />
+                  ))}
+                </div>
+              ) : 'info' in card && card.info ? (
+                <div className="space-y-3">
+                  {card.info.map(item => (
+                    <InfoRow key={item.label} label={item.label} value={item.value} />
+                  ))}
+                </div>
+              ) : null}
             </div>
-
-            {systemStats && (
-              <div className="space-y-4">
-                <ResourceBar label="CPU" value={systemStats.cpu_percent} />
-                <ResourceBar label="Memory" value={systemStats.memory_percent} />
-                <ResourceBar label="Disk" value={systemStats.disk_percent} />
-              </div>
-            )}
-          </div>
-
-          {/* Usage Stats */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700">
-            <div className="flex items-center gap-3 mb-4">
-              <Info className="w-5 h-5 text-galentix-300" />
-              <h2 className="text-lg font-semibold">Usage Statistics</h2>
-            </div>
-
-            {systemStats && (
-              <div className="space-y-3">
-                <InfoRow label="Conversations" value={systemStats.conversations_count.toString()} />
-                <InfoRow label="Messages" value={systemStats.messages_count.toString()} />
-                <InfoRow label="Documents" value={systemStats.documents_count.toString()} />
-              </div>
-            )}
-          </div>
-
-          {/* RAG Settings */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700">
-            <div className="flex items-center gap-3 mb-4">
-              <HardDrive className="w-5 h-5 text-galentix-300" />
-              <h2 className="text-lg font-semibold">RAG Configuration</h2>
-            </div>
-
-            {settings && (
-              <div className="space-y-3">
-                <InfoRow label="Enabled" value={settings.rag.enabled ? 'Yes' : 'No'} />
-                <InfoRow label="Chunk Size" value={settings.rag.chunk_size.toString()} />
-                <InfoRow label="Chunk Overlap" value={settings.rag.chunk_overlap.toString()} />
-                <InfoRow label="Top K Results" value={settings.rag.top_k.toString()} />
-              </div>
-            )}
-          </div>
-
-          {/* Search Settings */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-gray-200 dark:border-slate-700">
-            <div className="flex items-center gap-3 mb-4">
-              <Info className="w-5 h-5 text-galentix-300" />
-              <h2 className="text-lg font-semibold">Web Search</h2>
-            </div>
-
-            {settings && (
-              <div className="space-y-3">
-                <InfoRow label="Enabled" value={settings.search.enabled ? 'Yes' : 'No'} />
-                <InfoRow label="Max Results" value={settings.search.max_results.toString()} />
-              </div>
-            )}
-          </div>
+          ))}
         </div>
 
-        {/* Footer */}
-        <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          <p>Galentix AI v{deviceInfo?.version} - Local AI Assistant</p>
-          <p className="mt-1">100% Private - Your data stays on this device</p>
+        <div className="mt-8 text-center text-sm text-gray-500 dark:text-gray-400 animate-fade-in">
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            Galentix AI v{deviceInfo?.version} - Local AI Assistant
+          </div>
+          <p>100% Private - Your data stays on this device</p>
         </div>
       </div>
     </div>
@@ -380,9 +363,9 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 
 function ResourceBar({ label, value }: { label: string; value: number }) {
   const getColor = (v: number) => {
-    if (v > 90) return 'bg-red-500';
-    if (v > 70) return 'bg-yellow-500';
-    return 'bg-galentix-300';
+    if (v > 90) return 'bg-gradient-to-r from-red-500 to-red-600';
+    if (v > 70) return 'bg-gradient-to-r from-yellow-500 to-yellow-600';
+    return 'bg-gradient-to-r from-galentix-300 to-galentix-400';
   };
 
   return (
@@ -393,7 +376,7 @@ function ResourceBar({ label, value }: { label: string; value: number }) {
       </div>
       <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all ${getColor(value)}`}
+          className={`h-full rounded-full transition-all duration-500 ${getColor(value)}`}
           style={{ width: `${value}%` }}
         />
       </div>

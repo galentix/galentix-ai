@@ -4,8 +4,13 @@ High-performance GPU inference via vLLM (OpenAI-compatible API).
 """
 import httpx
 import json
+import asyncio
+import time
+import logging
 from typing import AsyncGenerator, List, Optional
 from .base import BaseLLMService, LLMMessage, LLMResponse
+
+logger = logging.getLogger(__name__)
 
 
 class VLLMService(BaseLLMService):
@@ -20,18 +25,77 @@ class VLLMService(BaseLLMService):
     
     async def health_check(self) -> bool:
         """Check if vLLM server is available."""
+        cached = self._cached_health_check()
+        if cached:
+            return True
+        
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(f"{self.base_url}/health")
-                return response.status_code == 200
+                result = response.status_code == 200
+                self._update_health_cache(result)
+                return result
         except Exception:
-            # Try OpenAI-compatible endpoint
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
                     response = await client.get(f"{self.base_url}/v1/models")
-                    return response.status_code == 200
+                    result = response.status_code == 200
+                    self._update_health_cache(result)
+                    return result
             except Exception:
                 return False
+    
+    async def _make_request(
+        self,
+        messages: List[dict],
+        temperature: float,
+        max_tokens: int,
+        stream: bool = False
+    ) -> dict:
+        """Make request to vLLM with retry logic."""
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        f"{self.base_url}/v1/chat/completions",
+                        json={
+                            "model": self.model,
+                            "messages": messages,
+                            "temperature": temperature,
+                            "max_tokens": max_tokens,
+                            "stream": stream
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        return {"success": True, "data": response.json()}
+                    else:
+                        try:
+                            error_data = response.json()
+                            last_error = f"vLLM error: {response.status_code} - {error_data.get('error', {}).get('message', 'Unknown error')}"
+                        except Exception:
+                            last_error = f"vLLM returned status {response.status_code}"
+                        
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1 * (attempt + 1))
+                        continue
+                        
+            except httpx.TimeoutException as e:
+                last_error = f"Request timeout: {str(e)}"
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 * (attempt + 1))
+            except httpx.ConnectError as e:
+                last_error = f"Connection error: {str(e)}"
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1 * (attempt + 1))
+            except Exception as e:
+                last_error = str(e)
+                break
+        
+        return {"success": False, "error": last_error}
     
     async def generate(
         self,
@@ -41,8 +105,8 @@ class VLLMService(BaseLLMService):
         system_prompt: Optional[str] = None
     ) -> LLMResponse:
         """Generate a response using vLLM's OpenAI-compatible API."""
+        start_time = time.time()
         
-        # Build messages for OpenAI-compatible API
         api_messages = []
         
         if system_prompt:
@@ -57,42 +121,30 @@ class VLLMService(BaseLLMService):
                 "content": msg.content
             })
         
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/v1/chat/completions",
-                    json={
-                        "model": self.model,
-                        "messages": api_messages,
-                        "temperature": temperature,
-                        "max_tokens": max_tokens,
-                        "stream": False
-                    }
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    choice = data.get("choices", [{}])[0]
-                    message = choice.get("message", {})
-                    usage = data.get("usage", {})
-                    
-                    return LLMResponse(
-                        content=message.get("content", ""),
-                        model=self.model,
-                        tokens_used=usage.get("total_tokens", 0),
-                        finish_reason=choice.get("finish_reason", "stop")
-                    )
-                else:
-                    return LLMResponse(
-                        content=f"Error: vLLM returned status {response.status_code}",
-                        model=self.model,
-                        finish_reason="error"
-                    )
-        except Exception as e:
+        result = await self._make_request(api_messages, temperature, max_tokens)
+        
+        latency_ms = (time.time() - start_time) * 1000
+        
+        if result["success"]:
+            data = result["data"]
+            choice = data.get("choices", [{}])[0]
+            message = choice.get("message", {})
+            usage = data.get("usage", {})
+            
             return LLMResponse(
-                content=f"Error connecting to vLLM: {str(e)}",
+                content=message.get("content", ""),
                 model=self.model,
-                finish_reason="error"
+                tokens_used=usage.get("total_tokens", 0),
+                finish_reason=choice.get("finish_reason", "stop"),
+                latency_ms=latency_ms
+            )
+        else:
+            return LLMResponse(
+                content=f"Error: {result['error']}",
+                model=self.model,
+                finish_reason="error",
+                latency_ms=latency_ms,
+                error=result["error"]
             )
     
     async def generate_stream(

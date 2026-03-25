@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: galentix-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_MODELS=/root/.ollama/models
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=sqlite+aiosqlite:///data/galentix.db
+      - CHROMA_PATH=/data/chroma
+      - LOG_LEVEL=info
+    volumes:
+      - galentix-data:/data
+      - galentix-config:/opt/galentix/config
+      - galentix-logs:/opt/galentix/logs
+      - ollama-models:/root/.ollama/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - galentix-network
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: galentix-searxng
+    restart: unless-stopped
+    ports:
+      - "8888:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888/
+      - SEARXNG_SECRET=galentix-searxng-secret-change-in-production
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - galentix-network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: galentix-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+    volumes:
+      - ollama-models:/root/.ollama/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - galentix-network
+
+networks:
+  galentix-network:
+    driver: bridge
+
+volumes:
+  galentix-data:
+    driver: local
+  galentix-config:
+    driver: local
+  galentix-logs:
+    driver: local
+  ollama-models:
+    driver: local

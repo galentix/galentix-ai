@@ -1,15 +1,21 @@
-import { useEffect } from 'react';
+import { useEffect, memo, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useSettingsStore } from './stores/settingsStore';
 import Layout from './components/layout/Layout';
-import ChatPage from './pages/ChatPage';
-import DocumentsPage from './pages/DocumentsPage';
-import SettingsPage from './pages/SettingsPage';
+
+const ChatPage = lazy(() => import('./pages/ChatPage'));
+const DocumentsPage = lazy(() => import('./pages/DocumentsPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+
+const LoadingSpinner = memo(() => (
+  <div className="flex items-center justify-center h-full">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-galentix-500" />
+  </div>
+));
 
 function App() {
   const { theme } = useSettingsStore();
 
-  // Apply theme to document
   useEffect(() => {
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
@@ -20,17 +26,19 @@ function App() {
 
   return (
     <BrowserRouter>
-      <div className={`min-h-screen ${theme === 'dark' ? 'dark' : ''}`}>
+      <div className={`min-h-screen transition-colors duration-300 ${theme === 'dark' ? 'dark' : ''}`}>
         <Layout>
-          <Routes>
-            <Route path="/" element={<ChatPage />} />
-            <Route path="/documents" element={<DocumentsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
+          <Suspense fallback={<LoadingSpinner />}>
+            <Routes>
+              <Route path="/" element={<ChatPage />} />
+              <Route path="/documents" element={<DocumentsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </Suspense>
         </Layout>
       </div>
     </BrowserRouter>
   );
 }
 
-export default App;
+export default memo(App);

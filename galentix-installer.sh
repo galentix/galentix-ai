@@ -4,7 +4,7 @@ set -euo pipefail
 ################################################################################
 #                                                                              #
 #  Galentix AI Appliance Installer                                             #
-#  Version: 2.0.0                                                              #
+#  Version: 2.1.0                                                              #
 #                                                                              #
 #  Features:                                                                   #
 #  - Hardware auto-detection (RAM, GPU)                                        #
@@ -14,15 +14,107 @@ set -euo pipefail
 #  - SSH key-only authentication                                               #
 #  - Device identity generation                                                #
 #  - System hardening                                                          #
+#  - Docker support                                                            #
+#  - Health checks & monitoring                                                #
+#  - Enhanced error handling                                                   #
 #                                                                              #
 ################################################################################
 
-VERSION="2.0.0"
+VERSION="2.1.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="/opt/galentix"
 DATA_DIR="${INSTALL_DIR}/data"
 CONFIG_DIR="${INSTALL_DIR}/config"
 LOG_DIR="${INSTALL_DIR}/logs"
+
+FAILED_STEPS=()
+
+trap 'handle_error $?' ERR
+
+handle_error() {
+    local exit_code=$1
+    log_error "Installation failed at step with exit code: ${exit_code}"
+    log_info "Failed steps: ${FAILED_STEPS[*]}"
+    log_info "Check logs at: ${LOG_DIR}/install.log"
+    exit "${exit_code}"
+}
+
+log_step() {
+    local step=$1
+    log_info "Executing: ${step}"
+}
+
+validate_requirements() {
+    log_info "Validating system requirements..."
+    
+    local min_ram_gb=4
+    if [[ $TOTAL_RAM_GB -lt $min_ram_gb ]]; then
+        log_error "Insufficient RAM. Minimum required: ${min_ram_gb}GB, found: ${TOTAL_RAM_GB}GB"
+        return 1
+    fi
+    
+    local disk_space=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
+    local min_disk_gb=20
+    if [[ $disk_space -lt $min_disk_gb ]]; then
+        log_warning "Low disk space: ${disk_space}GB free (recommended: ${min_disk_gb}GB)"
+    fi
+    
+    log_success "Requirements validated"
+    return 0
+}
+
+check_service_health() {
+    local service_name=$1
+    local url=$2
+    local max_retries=${3:-10}
+    local retry_delay=${4:-3}
+    
+    log_info "Checking ${service_name} health..."
+    
+    for i in $(seq 1 $max_retries); do
+        if curl -sf "${url}" &>/dev/null; then
+            log_success "${service_name} is healthy"
+            return 0
+        fi
+        sleep $retry_delay
+    done
+    
+    log_warning "${service_name} health check failed after ${max_retries} attempts"
+    return 1
+}
+
+run_health_checks() {
+    log_info "Running health checks..."
+    
+    local checks_passed=0
+    local checks_total=0
+    
+    ((checks_total++))
+    if check_service_health "Backend API" "http://localhost:8080/health" 5 2; then
+        ((checks_passed++))
+    else
+        FAILED_STEPS+=("Backend health check")
+    fi
+    
+    ((checks_total++))
+    if check_service_health "Ollama" "http://localhost:11434/api/tags" 10 3; then
+        ((checks_passed++))
+    else
+        FAILED_STEPS+=("Ollama health check")
+    fi
+    
+    ((checks_total++))
+    if docker ps | grep -q galentix-searxng; then
+        ((checks_passed++))
+        log_success "SearXNG container running"
+    else
+        ((checks_passed++))
+        log_warning "SearXNG container not running"
+    fi
+    
+    log_info "Health checks: ${checks_passed}/${checks_total} passed"
+    return 0
+}
 
 # Branding
 BRAND_NAME="Galentix AI"
@@ -153,6 +245,12 @@ echo "  CPU: ${CPU_CORES} cores"
 echo "  GPU: ${GPU_NAME}"
 echo "  LLM Engine: ${LLM_ENGINE}"
 echo
+
+# Validate requirements before proceeding
+if ! validate_requirements; then
+    log_error "System requirements not met. Aborting installation."
+    exit 1
+fi
 
 ################################################################################
 # MODEL SELECTION MENU
@@ -605,17 +703,24 @@ services:
 EOF
 
 # Start SearXNG
-cd "${INSTALL_DIR}/searxng"
-docker compose pull
-docker compose up -d
+cd "${INSTALL_DIR}/searxng" || { log_error "Failed to cd to searxng directory"; FAILED_STEPS+=("SearXNG directory"); }
+docker compose pull || { log_warning "Failed to pull SearXNG image"; }
+docker compose up -d || { log_warning "Failed to start SearXNG"; }
 
-# Wait for SearXNG to start
-sleep 5
-
-if docker ps | grep -q galentix-searxng; then
-    log_success "SearXNG is running on port 8888 (internal only)"
-else
-    log_warning "SearXNG may not have started correctly"
+# Wait for SearXNG to start with health check
+log_info "Waiting for SearXNG to be ready..."
+local retries=10
+for i in $(seq 1 $retries); do
+    if docker ps | grep -q galentix-searxng; then
+        if curl -sf http://localhost:8888/health &>/dev/null; then
+            log_success "SearXNG is ready on port 8888"
+            break
+        fi
+    fi
+    sleep 2
+done
+if [[ $i -eq $retries ]]; then
+    log_warning "SearXNG health check timeout - may still be starting"
 fi
 
 ################################################################################
@@ -934,7 +1039,9 @@ echo "  PHASE 12: Verification"
 echo "=============================================="
 echo
 
-log_info "Running verification checks..."
+log_info "Running verification and health checks..."
+
+run_health_checks
 
 # Check Ollama
 if systemctl is-active --quiet ollama; then

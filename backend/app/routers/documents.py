@@ -9,21 +9,38 @@ import aiofiles
 from typing import List
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from ..database import get_db
 from ..models.document import Document
-from ..models.schemas import DocumentResponse, DocumentListResponse, DocumentUploadResponse
+from ..models.schemas import (
+    DocumentResponse,
+    DocumentListResponse,
+    DocumentUploadResponse,
+    PaginatedResponse,
+    ErrorResponse
+)
 from ..services.rag import get_rag_pipeline
 from ..config import settings
 
-router = APIRouter(prefix="/api/documents", tags=["documents"])
+router = APIRouter(
+    prefix="/api/documents",
+    tags=["documents"],
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid request"},
+        422: {"model": ErrorResponse, "description": "Validation error"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    }
+)
 
-# Supported file types
 SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md", ".docx", ".doc", ".csv", ".json"}
-MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB
+MAX_FILE_SIZE = 50 * 1024 * 1024
+MAX_PAGE_SIZE = 100
+DEFAULT_PAGE_SIZE = 20
 
 
 def is_garbled_text(text: str) -> bool:
@@ -243,7 +260,20 @@ async def process_document(document_id: str, filepath: Path, file_type: str):
                 pass
 
 
-@router.post("/upload", response_model=DocumentUploadResponse)
+@router.post(
+    "/upload",
+    response_model=DocumentUploadResponse,
+    summary="Upload a document",
+    description="Upload a document (PDF, TXT, MD, DOCX, CSV, JSON) for RAG indexing. The document will be processed in the background.",
+    responses={
+        200: {"description": "Document uploaded successfully"},
+        400: {"model": ErrorResponse, "description": "Invalid file or file too large"},
+        413: {"model": ErrorResponse, "description": "Payload too large"},
+        422: {"model": ErrorResponse, "description": "Validation error"},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded"},
+        503: {"model": ErrorResponse, "description": "RAG service unavailable"}
+    }
+)
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -251,23 +281,30 @@ async def upload_document(
 ):
     """Upload a document for RAG indexing."""
     
-    # Validate file
     if not file.filename:
-        raise HTTPException(status_code=400, detail="No filename provided")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No filename provided"
+        )
     
     file_ext = Path(file.filename).suffix.lower()
     if file_ext not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported file type. Supported: {', '.join(SUPPORTED_EXTENSIONS)}"
         )
     
-    # Read file content to check size
     content = await file.read()
     if len(content) > MAX_FILE_SIZE:
         raise HTTPException(
-            status_code=400,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"File too large. Maximum size: {MAX_FILE_SIZE // 1024 // 1024}MB"
+        )
+    
+    if not settings.rag_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RAG service is not enabled"
         )
     
     # Generate unique filename
@@ -307,49 +344,76 @@ async def upload_document(
     )
 
 
-@router.get("/", response_model=DocumentListResponse)
+@router.get(
+    "/",
+    response_model=PaginatedResponse[DocumentResponse],
+    summary="List documents",
+    description="Retrieve a paginated list of uploaded documents. Filter by status (pending, processing, ready, error).",
+    responses={
+        200: {"description": "Successfully retrieved documents"},
+        422: {"model": ErrorResponse, "description": "Invalid pagination parameters"}
+    }
+)
 async def list_documents(
-    skip: int = 0,
-    limit: int = 50,
-    status: str = None,
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE, description="Number of items per page"),
+    status_filter: str = Query(None, alias="status", description="Filter by document status"),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all uploaded documents."""
-    query = select(Document).order_by(Document.created_at.desc())
+    """List all uploaded documents with pagination."""
+    skip = (page - 1) * page_size
     
-    if status:
-        query = query.where(Document.status == status)
+    base_query = select(Document)
+    count_query = select(func.count(Document.id))
     
-    query = query.offset(skip).limit(limit)
+    if status_filter:
+        base_query = base_query.where(Document.status == status_filter)
+        count_query = count_query.where(Document.status == status_filter)
     
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+    
+    query = base_query.order_by(Document.created_at.desc()).offset(skip).limit(page_size)
     result = await db.execute(query)
     documents = result.scalars().all()
     
-    # Get total count
-    count_result = await db.execute(select(Document))
-    total = len(count_result.scalars().all())
+    items = [
+        DocumentResponse(
+            id=d.id,
+            filename=d.filename,
+            original_name=d.original_name,
+            file_type=d.file_type,
+            file_size=d.file_size,
+            status=d.status,
+            error_message=d.error_message,
+            chunk_count=d.chunk_count,
+            created_at=d.created_at,
+            processed_at=d.processed_at
+        )
+        for d in documents
+    ]
     
-    return DocumentListResponse(
-        documents=[
-            DocumentResponse(
-                id=d.id,
-                filename=d.filename,
-                original_name=d.original_name,
-                file_type=d.file_type,
-                file_size=d.file_size,
-                status=d.status,
-                error_message=d.error_message,
-                chunk_count=d.chunk_count,
-                created_at=d.created_at,
-                processed_at=d.processed_at
-            )
-            for d in documents
-        ],
-        total=total
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+    
+    return PaginatedResponse(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages
     )
 
 
-@router.get("/{document_id}", response_model=DocumentResponse)
+@router.get(
+    "/{document_id}",
+    response_model=DocumentResponse,
+    summary="Get a document",
+    description="Retrieve details of a specific uploaded document.",
+    responses={
+        200: {"description": "Document found and returned"},
+        404: {"model": ErrorResponse, "description": "Document not found"}
+    }
+)
 async def get_document(
     document_id: str,
     db: AsyncSession = Depends(get_db)
@@ -361,7 +425,10 @@ async def get_document(
     doc = result.scalar_one_or_none()
     
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
     
     return DocumentResponse(
         id=doc.id,
@@ -377,7 +444,17 @@ async def get_document(
     )
 
 
-@router.delete("/{document_id}")
+@router.delete(
+    "/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a document",
+    description="Delete a document and remove it from the RAG index.",
+    responses={
+        204: {"description": "Document deleted successfully"},
+        404: {"model": ErrorResponse, "description": "Document not found"},
+        503: {"model": ErrorResponse, "description": "RAG service unavailable"}
+    }
+)
 async def delete_document(
     document_id: str,
     db: AsyncSession = Depends(get_db)
@@ -389,25 +466,32 @@ async def delete_document(
     doc = result.scalar_one_or_none()
     
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
     
-    # Delete from vector store
     rag = get_rag_pipeline()
     await rag.delete_document(document_id)
     
-    # Delete file
     filepath = settings.data_dir / "documents" / doc.filename
     if filepath.exists():
         os.remove(filepath)
     
-    # Delete from database
     await db.delete(doc)
     await db.commit()
-    
-    return {"message": "Document deleted"}
 
 
-@router.post("/{document_id}/reprocess")
+@router.post(
+    "/{document_id}/reprocess",
+    summary="Reprocess a document",
+    description="Re-index a document that has already been uploaded.",
+    responses={
+        200: {"description": "Document queued for reprocessing"},
+        404: {"model": ErrorResponse, "description": "Document not found"},
+        503: {"model": ErrorResponse, "description": "RAG service unavailable"}
+    }
+)
 async def reprocess_document(
     document_id: str,
     background_tasks: BackgroundTasks,
@@ -420,7 +504,10 @@ async def reprocess_document(
     doc = result.scalar_one_or_none()
     
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
     
     # Delete existing index
     rag = get_rag_pipeline()

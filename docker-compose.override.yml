@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: galentix-backend-dev
+    environment:
+      - DEBUG=true
+      - LOG_LEVEL=debug
+    volumes:
+      - ./backend:/app/backend
+      - galentix-data-dev:/data
+    command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
+
+  searxng:
+    environment:
+      - SEARXNG_DEBUG=true
+
+  ollama:
+    environment:
+      - OLLAMA_DEBUG=1

@@ -4,8 +4,14 @@ Supports CPU and GPU inference via Ollama.
 """
 import httpx
 import json
+import asyncio
+import time
+import logging
 from typing import AsyncGenerator, List, Optional
 from .base import BaseLLMService, LLMMessage, LLMResponse
+from .retry import RetryConfig, async_retry
+
+logger = logging.getLogger(__name__)
 
 
 class OllamaService(BaseLLMService):
@@ -14,6 +20,7 @@ class OllamaService(BaseLLMService):
     def __init__(self, model: str = "tinyllama", base_url: str = "http://127.0.0.1:11434"):
         super().__init__(model, base_url)
         self.embedding_model = "nomic-embed-text"
+        self._retry_config = RetryConfig(max_retries=3, initial_delay=1.0)
     
     @property
     def engine_name(self) -> str:
@@ -21,12 +28,67 @@ class OllamaService(BaseLLMService):
     
     async def health_check(self) -> bool:
         """Check if Ollama is available."""
+        cached = self._cached_health_check()
+        if cached:
+            return True
+        
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(f"{self.base_url}/api/tags")
-                return response.status_code == 200
+                result = response.status_code == 200
+                self._update_health_cache(result)
+                return result
         except Exception:
             return False
+    
+    async def _make_request(
+        self,
+        messages: List[dict],
+        temperature: float,
+        max_tokens: int,
+        stream: bool = False
+    ) -> dict:
+        """Make request to Ollama with retry logic."""
+        max_retries = 3
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    response = await client.post(
+                        f"{self.base_url}/api/chat",
+                        json={
+                            "model": self.model,
+                            "messages": messages,
+                            "stream": stream,
+                            "options": {
+                                "temperature": temperature,
+                                "num_predict": max_tokens
+                            }
+                        }
+                    )
+                    
+                    if response.status_code == 200:
+                        return {"success": True, "data": response.json()}
+                    else:
+                        last_error = f"Ollama returned status {response.status_code}"
+                        if attempt < max_retries - 1:
+                            await asyncio.sleep(1 * (attempt + 1))
+                        continue
+                        
+            except httpx.TimeoutException as e:
+                last_error = f"Request timeout: {str(e)}"
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2 * (attempt + 1))
+            except httpx.ConnectError as e:
+                last_error = f"Connection error: {str(e)}"
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1 * (attempt + 1))
+            except Exception as e:
+                last_error = str(e)
+                break
+        
+        return {"success": False, "error": last_error}
     
     async def generate(
         self,
@@ -36,8 +98,8 @@ class OllamaService(BaseLLMService):
         system_prompt: Optional[str] = None
     ) -> LLMResponse:
         """Generate a response using Ollama."""
+        start_time = time.time()
         
-        # Build messages for Ollama chat API
         ollama_messages = []
         
         if system_prompt:
@@ -52,40 +114,26 @@ class OllamaService(BaseLLMService):
                 "content": msg.content
             })
         
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                response = await client.post(
-                    f"{self.base_url}/api/chat",
-                    json={
-                        "model": self.model,
-                        "messages": ollama_messages,
-                        "stream": False,
-                        "options": {
-                            "temperature": temperature,
-                            "num_predict": max_tokens
-                        }
-                    }
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    return LLMResponse(
-                        content=data.get("message", {}).get("content", ""),
-                        model=self.model,
-                        tokens_used=data.get("eval_count", 0),
-                        finish_reason="stop"
-                    )
-                else:
-                    return LLMResponse(
-                        content=f"Error: Ollama returned status {response.status_code}",
-                        model=self.model,
-                        finish_reason="error"
-                    )
-        except Exception as e:
+        result = await self._make_request(ollama_messages, temperature, max_tokens)
+        
+        latency_ms = (time.time() - start_time) * 1000
+        
+        if result["success"]:
+            data = result["data"]
             return LLMResponse(
-                content=f"Error connecting to Ollama: {str(e)}",
+                content=data.get("message", {}).get("content", ""),
                 model=self.model,
-                finish_reason="error"
+                tokens_used=data.get("eval_count", 0),
+                finish_reason="stop",
+                latency_ms=latency_ms
+            )
+        else:
+            return LLMResponse(
+                content=f"Error: {result['error']}",
+                model=self.model,
+                finish_reason="error",
+                latency_ms=latency_ms,
+                error=result["error"]
             )
     
     async def generate_stream(

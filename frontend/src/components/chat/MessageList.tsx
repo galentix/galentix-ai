@@ -1,19 +1,25 @@
-import Message from './Message';
-import type { Message as MessageType } from '../../types';
+import { memo, useCallback } from 'react';
+import Message from './Message'
+import type { Message as MessageType } from '../../types'
 
 interface MessageListProps {
-  messages: MessageType[];
-  streamingContent?: string;
+  messages: MessageType[]
+  streamingContent?: string
 }
 
-export default function MessageList({ messages, streamingContent }: MessageListProps) {
+function MessageListComponent({ messages, streamingContent }: MessageListProps) {
   return (
-    <div className="space-y-4 max-w-3xl mx-auto">
-      {messages.map((message) => (
-        <Message key={message.id} message={message} />
+    <div className="space-y-4 max-w-3xl mx-auto" role="log" aria-label="Chat messages" aria-live="polite">
+      {messages.map((message, index) => (
+        <div 
+          key={message.id} 
+          className="animate-slide-up"
+          style={{ animationDelay: `${index * 50}ms` }}
+        >
+          <Message message={message} />
+        </div>
       ))}
       
-      {/* Streaming message */}
       {streamingContent !== undefined && (
         <Message
           message={{
@@ -27,5 +33,7 @@ export default function MessageList({ messages, streamingContent }: MessageListP
         />
       )}
     </div>
-  );
+  )
 }
+
+export default memo(MessageListComponent)
